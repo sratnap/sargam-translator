@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sargam Translator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0e0c0a;
+      --surface:   #1a1713;
+      --border:    #2e2a24;
+      --gold:      #c9a84c;
+      --gold-dim:  #7a6330;
+      --cream:     #f0e6d0;
+      --muted:     #7a7060;
+      --error:     #c0574a;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--cream);
+      font-family: 'DM Mono', monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 60px 24px 80px;
+    }
+
+    /* ── decorative top rule ── */
+    .top-rule {
+      width: 100%;
+      max-width: 560px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 40px;
+    }
+    .top-rule span { flex: 1; height: 1px; background: var(--border); }
+    .top-rule .diamond {
+      width: 8px; height: 8px;
+      background: var(--gold);
+      transform: rotate(45deg);
+      flex-shrink: 0;
+    }
+
+    /* ── header ── */
+    header { text-align: center; margin-bottom: 56px; }
+    header h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2rem, 6vw, 3.2rem);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: var(--cream);
+      line-height: 1.1;
+    }
+    header h1 em {
+      font-style: italic;
+      color: var(--gold);
+    }
+    header p {
+      margin-top: 14px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    /* ── card ── */
+    .card {
+      width: 100%;
+      max-width: 560px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 36px 36px 32px;
+    }
+
+    /* ── section label ── */
+    .label {
+      font-size: 0.68rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--gold-dim);
+      margin-bottom: 10px;
+    }
+
+    /* ── Sa selector ── */
+    .sa-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 28px;
+    }
+    .sa-btn {
+      padding: 7px 14px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      color: var(--muted);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .sa-btn:hover { border-color: var(--gold-dim); color: var(--cream); }
+    .sa-btn.active {
+      background: var(--gold);
+      border-color: var(--gold);
+      color: #0e0c0a;
+      font-weight: 500;
+    }
+
+    /* ── file upload zone ── */
+    .upload-zone {
+      border: 1px dashed var(--border);
+      border-radius: 3px;
+      padding: 36px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-bottom: 24px;
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--gold-dim);
+      background: rgba(201,168,76,0.04);
+    }
+    .upload-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .upload-icon {
+      font-size: 1.8rem;
+      margin-bottom: 10px;
+      opacity: 0.5;
+    }
+    .upload-zone p {
+      font-size: 0.78rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .upload-zone .filename {
+      margin-top: 10px;
+      font-size: 0.8rem;
+      color: var(--gold);
+    }
+
+    /* ── translate button ── */
+    .translate-btn {
+      width: 100%;
+      padding: 14px;
+      background: var(--gold);
+      border: none;
+      border-radius: 2px;
+      color: #0e0c0a;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.82rem;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .translate-btn:hover { background: #d4b45a; }
+    .translate-btn:disabled {
+      background: var(--border);
+      color: var(--muted);
+      cursor: not-allowed;
+    }
+
+    /* ── output section ── */
+    .output-section {
+      margin-top: 36px;
+      opacity: 0;
+      transform: translateY(12px);
+      transition: all 0.4s ease;
+      pointer-events: none;
+    }
+    .output-section.visible {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: all;
+    }
+
+    .output-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.7rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .output-meta span { color: var(--gold-dim); }
+    .output-meta b { color: var(--cream); }
+
+    .sargam-output {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(1.1rem, 3vw, 1.5rem);
+      line-height: 2.2;
+      color: var(--cream);
+      word-break: break-word;
+      letter-spacing: 0.04em;
+    }
+
+    /* colour-code note types */
+    .note-shuddha { color: var(--cream); }
+    .note-komal   { color: #8fbcda; }   /* soft blue  */
+    .note-tivra   { color: #c48a6a; }   /* warm amber */
+    .note-sa      { color: var(--gold); font-weight: 700; }
+    .note-pa      { color: var(--gold); font-weight: 700; }
+
+    .copy-btn {
+      margin-top: 20px;
+      padding: 8px 18px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      color: var(--muted);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .copy-btn:hover { border-color: var(--gold-dim); color: var(--cream); }
+
+    /* ── loading spinner ── */
+    .spinner {
+      display: none;
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 0 auto;
+    }
+    .spinner.active { display: block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── error message ── */
+    .error-msg {
+      display: none;
+      margin-top: 16px;
+      padding: 12px 16px;
+      border: 1px solid var(--error);
+      border-radius: 2px;
+      color: var(--error);
+      font-size: 0.78rem;
+      line-height: 1.5;
+    }
+    .error-msg.visible { display: block; }
+
+    /* ── bottom rule ── */
+    .bottom-rule {
+      margin-top: 52px;
+      width: 100%;
+      max-width: 560px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .bottom-rule span { flex: 1; height: 1px; background: var(--border); }
+    .bottom-rule p {
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="top-rule">
+    <span></span><div class="diamond"></div><span></span>
+  </div>
+
+  <header>
+    <h1>Sargam <em>Translator</em></h1>
+    <p>Audio → Hindustani Notation</p>
+  </header>
+
+  <div class="card">
+
+    <!-- Sa selector -->
+    <div class="label">Select Sa (Root Pitch)</div>
+    <div class="sa-row" id="saRow">
+      <!-- buttons injected by JS -->
+    </div>
+
+    <!-- File upload -->
+    <div class="label">Upload Audio</div>
+    <div class="upload-zone" id="uploadZone">
+      <input type="file" id="fileInput" accept=".mp3,.wav,.m4a,.aac" />
+      <div class="upload-icon">♩</div>
+      <p>Click to choose a file, or drag one here<br/>MP3 · WAV · M4A · AAC &nbsp;|&nbsp; up to ~1 min</p>
+      <div class="filename" id="fileName"></div>
+    </div>
+
+    <!-- Translate button -->
+    <button class="translate-btn" id="translateBtn" disabled>
+      Translate to Sargam
+    </button>
+
+    <!-- Loading -->
+    <div style="padding: 16px 0 0; display:none" id="loadingRow">
+      <div class="spinner active"></div>
+    </div>
+
+    <!-- Error -->
+    <div class="error-msg" id="errorMsg"></div>
+
+    <!-- Output -->
+    <div class="output-section" id="outputSection">
+      <div class="output-meta">
+        <div>Sa: <b id="metaSa">—</b></div>
+        <div>Notes: <b id="metaNotes">—</b></div>
+        <div>Duration: <b id="metaDuration">—</b></div>
+      </div>
+      <div class="sargam-output" id="sargamOutput"></div>
+      <button class="copy-btn" id="copyBtn">Copy Sargam</button>
+    </div>
+
+  </div>
+
+  <div class="bottom-rule">
+    <span></span>
+    <p>v1 proof of concept</p>
+    <span></span>
+  </div>
+
+  <script>
+    // ── Sa buttons ──────────────────────────────────────────────
+    const NOTES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+    let selectedSa = "C";
+    let selectedFile = null;
+
+    const saRow = document.getElementById("saRow");
+    NOTES.forEach(note => {
+      const btn = document.createElement("button");
+      btn.className = "sa-btn" + (note === selectedSa ? " active" : "");
+      btn.textContent = note;
+      btn.onclick = () => {
+        document.querySelectorAll(".sa-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        selectedSa = note;
+        updateBtn();
+      };
+      saRow.appendChild(btn);
+    });
+
+    // ── File upload ─────────────────────────────────────────────
+    const fileInput  = document.getElementById("fileInput");
+    const uploadZone = document.getElementById("uploadZone");
+    const fileName   = document.getElementById("fileName");
+
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files[0]) setFile(fileInput.files[0]);
+    });
+
+    uploadZone.addEventListener("dragover", e => {
+      e.preventDefault(); uploadZone.classList.add("drag-over");
+    });
+    uploadZone.addEventListener("dragleave", () => {
+      uploadZone.classList.remove("drag-over");
+    });
+    uploadZone.addEventListener("drop", e => {
+      e.preventDefault();
+      uploadZone.classList.remove("drag-over");
+      if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+    });
+
+    function setFile(f) {
+      selectedFile = f;
+      fileName.textContent = f.name;
+      updateBtn();
+    }
+
+    // ── Enable/disable translate button ─────────────────────────
+    function updateBtn() {
+      document.getElementById("translateBtn").disabled = !selectedFile;
+    }
+
+    // ── Translate ────────────────────────────────────────────────
+    document.getElementById("translateBtn").addEventListener("click", async () => {
+      if (!selectedFile) return;
+
+      // show loading, hide old output
+      const loadingRow   = document.getElementById("loadingRow");
+      const outputSection = document.getElementById("outputSection");
+      const errorMsg     = document.getElementById("errorMsg");
+
+      loadingRow.style.display = "block";
+      outputSection.classList.remove("visible");
+      errorMsg.classList.remove("visible");
+      document.getElementById("translateBtn").disabled = true;
+
+      try {
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        formData.append("sa", selectedSa);
+
+        const resp = await fetch("http://127.0.0.1:8000/translate", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await resp.json();
+
+        if (data.error) {
+          errorMsg.textContent = "Error: " + data.error;
+          errorMsg.classList.add("visible");
+        } else {
+          renderOutput(data);
+        }
+
+      } catch (err) {
+        errorMsg.textContent =
+          "Could not reach the server. Make sure you ran: uvicorn server:app --reload";
+        errorMsg.classList.add("visible");
+      } finally {
+        loadingRow.style.display = "none";
+        document.getElementById("translateBtn").disabled = false;
+      }
+    });
+
+    // ── Render sargam output ─────────────────────────────────────
+    function noteClass(note) {
+      const base = note.replace(/[.,]/g, "");
+      if (base === "S")  return "note-sa";
+      if (base === "P")  return "note-pa";
+      if (base.includes("'")) return "note-tivra";
+      if (base === base.toLowerCase()) return "note-komal";
+      return "note-shuddha";
+    }
+
+    function renderOutput(data) {
+      document.getElementById("metaSa").textContent       = data.sa;
+      document.getElementById("metaNotes").textContent    = data.total_notes;
+      document.getElementById("metaDuration").textContent = data.duration + "s";
+
+      const container = document.getElementById("sargamOutput");
+      container.innerHTML = data.sargam
+        .map(n => `<span class="${noteClass(n)}">${n}</span>`)
+        .join(" &thinsp; ");
+
+      document.getElementById("outputSection").classList.add("visible");
+    }
+
+    // ── Copy button ──────────────────────────────────────────────
+    document.getElementById("copyBtn").addEventListener("click", () => {
+      const text = document.getElementById("sargamOutput").innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById("copyBtn");
+        btn.textContent = "Copied ✓";
+        setTimeout(() => btn.textContent = "Copy Sargam", 1800);
+      });
+    });
+  </script>
+</body>
+</html>
