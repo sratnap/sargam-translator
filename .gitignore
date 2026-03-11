@@ -1,0 +1,12 @@
+# Audio files
+*.mp3
+*.wav
+*.m4a
+*.aac
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Debug output
+output.txt
