@@ -1,11 +1,11 @@
 """
-Sargam Translator — FastAPI Server
-------------------------------------
+Sargam Translator — FastAPI Server v2
+--------------------------------------
 Runs the sargam translation logic as a local web server.
-The webpage (index.html) talks to this server.
+Returns note timestamps for synchronized playback in the UI.
 
-To start the server, run in Command Prompt:
-    uvicorn server:app --reload
+To start:
+    python -m uvicorn server:app --reload
 
 Then open index.html in your browser.
 """
@@ -19,8 +19,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# Allow the HTML page to talk to this server
-# (browsers block cross-origin requests by default)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,7 +26,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Sargam mapping (same as sargam_translator.py) ──────────────────
+# ── Sargam mapping ──────────────────────────────────────────────────
 
 SEMITONES_TO_SARGAM = {
     0:  "S",
@@ -67,7 +65,9 @@ def hz_to_sargam(hz, sa_midi):
     syllable += octave_suffix(octave_offset)
     return syllable
 
-SMOOTH_WINDOW = 9   # keeps short real notes intact while smoothing brief flickers
+# ── Smoothing ───────────────────────────────────────────────────────
+
+SMOOTH_WINDOW = 9
 
 def smooth_pitch_sequence(notes):
     if len(notes) < SMOOTH_WINDOW:
@@ -101,73 +101,58 @@ def smooth_pitch_sequence(notes):
         smoothed.extend([note] * count)
     return smoothed
 
-def collapse_repeated_notes(sargam_list):
+# ── Collapse with timestamps ────────────────────────────────────────
+
+def collapse_with_timestamps(syllables, timestamps):
     """
-    Filter out transition noise while preserving both slow and fast notes.
-
-    The old approach used a single global median threshold — this worked
-    for uniform-paced recordings but ate short notes in fast passages when
-    the median was dominated by long slow-section notes.
-
-    New approach: LOCAL windowed threshold.
-    - Divide the note groups into overlapping windows of LOCAL_WINDOW size
-    - Compute a separate median threshold for each window
-    - Each note is judged against its LOCAL context, not the global average
-    - This means fast passages get a low threshold (keeps short notes)
-      and slow passages get a higher threshold (filters wobble noise)
+    Collapse consecutive identical syllables, keeping the timestamp
+    of the first frame of each note group. Filters out very short
+    runs (transitions/noise) using a local windowed median threshold.
     """
-    if not sargam_list:
-        return []
+    if not syllables:
+        return [], []
 
-    # Build groups of consecutive identical notes
+    # Build groups: (note, count, start_timestamp)
     groups = []
-    current = sargam_list[0]
+    current = syllables[0]
+    current_time = timestamps[0]
     count = 1
-    for note in sargam_list[1:]:
-        if note == current:
+    for i in range(1, len(syllables)):
+        if syllables[i] == current:
             count += 1
         else:
-            groups.append([current, count])
-            current = note
+            groups.append((current, count, current_time))
+            current = syllables[i]
+            current_time = timestamps[i]
             count = 1
-    groups.append([current, count])
+    groups.append((current, count, current_time))
 
     if len(groups) == 1:
-        return [groups[0][0]]
+        return [groups[0][0]], [groups[0][2]]
 
-    # LOCAL_WINDOW: how many surrounding notes to consider when setting
-    # the threshold for a given note. 8 means "look at the 4 notes before
-    # and 4 notes after me to judge what counts as short in this passage."
     LOCAL_WINDOW = 8
     half = LOCAL_WINDOW // 2
+    run_lengths = [c for _, c, _ in groups]
 
-    run_lengths = [c for _, c in groups]
-    filtered = []
+    filtered_notes = []
+    filtered_times = []
 
-    for i, (note, count) in enumerate(groups):
-        # Get the local window of run lengths around this note
+    for i, (note, count, t) in enumerate(groups):
         lo = max(0, i - half)
         hi = min(len(groups), i + half + 1)
         local_lengths = run_lengths[lo:hi]
-
-        # Local threshold = 10% of local median, minimum 3 frames
         local_median = np.median(local_lengths)
         threshold = max(local_median * 0.10, 3)
-
         if count >= threshold:
-            filtered.append(note)
+            filtered_notes.append(note)
+            filtered_times.append(t)
 
-    return filtered
+    return filtered_notes, filtered_times
 
 # ── API endpoint ────────────────────────────────────────────────────
 
 @app.post("/translate")
 async def translate(file: UploadFile = File(...), sa: str = Form(...)):
-    """
-    Receives an audio file and a Sa note from the webpage.
-    Returns the sargam transcription as JSON.
-    """
-
     # Validate Sa
     sa = sa.strip().upper()
     enharmonic = {"DB": "C#", "EB": "D#", "GB": "F#", "AB": "G#", "BB": "A#"}
@@ -177,16 +162,15 @@ async def translate(file: UploadFile = File(...), sa: str = Form(...)):
 
     sa_index = CHROMATIC_SCALE.index(sa)
     sa_midi = 48 + sa_index
+    print(f"DEBUG SERVER: sa={sa}, sa_midi={sa_midi}, file={file.filename}")
 
-    # Save uploaded file to a temporary location so librosa can read it
-    suffix = os.path.splitext(file.filename)[1]  # e.g. ".mp3"
+    suffix = os.path.splitext(file.filename)[1] or ".wav"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         contents = await file.read()
         tmp.write(contents)
         tmp_path = tmp.name
 
     try:
-        # Load and detect pitches
         y, sr = librosa.load(tmp_path, sr=None, mono=True)
         duration = librosa.get_duration(y=y, sr=sr)
 
@@ -197,35 +181,46 @@ async def translate(file: UploadFile = File(...), sa: str = Form(...)):
             sr=sr
         )
 
-        # Confidence filtering — pYIN gives each frame a voiced probability
-        # (0.0 to 1.0). We use a low threshold of 0.2 here — just enough to
-        # cut completely unvoiced frames (silence, breath) without accidentally
-        # dropping real notes. The smoothing and collapse steps handle the rest.
+        frame_times = librosa.times_like(f0, sr=sr)
         CONFIDENCE_THRESHOLD = 0.2
 
-        # Convert to sargam
-        sargam_notes = []
-        for hz, is_voiced, confidence in zip(f0, voiced_flag, voiced_prob):
+        # Convert frames to (syllable, timestamp) pairs
+        syllables = []
+        timestamps = []
+        for hz, is_voiced, confidence, t in zip(f0, voiced_flag, voiced_prob, frame_times):
             if not is_voiced:
                 continue
             if confidence < CONFIDENCE_THRESHOLD:
-                continue  # skip low-confidence frames (transitions, breath noise)
+                continue
             syllable = hz_to_sargam(hz, sa_midi)
             if syllable is not None:
-                sargam_notes.append(syllable)
+                syllables.append(syllable)
+                timestamps.append(float(t))
 
-        sargam_notes = smooth_pitch_sequence(sargam_notes)
-        sargam_notes = collapse_repeated_notes(sargam_notes)
+        # Smooth then collapse, preserving timestamps
+        syllables = smooth_pitch_sequence(syllables)
+        # Re-align timestamps after smoothing (syllables list may have changed)
+        # We rebuild timestamps to match the smoothed syllables by
+        # keeping only timestamps at positions that survived smoothing.
+        # Since smooth_pitch_sequence preserves length, timestamps stay aligned.
+        syllables, timestamps = collapse_with_timestamps(syllables, timestamps)
+
+        # Build response
+        notes_with_times = [
+            {"note": n, "time": round(t, 3)}
+            for n, t in zip(syllables, timestamps)
+        ]
 
         return {
-            "sargam": sargam_notes,         # list of note strings
+            "sargam": notes_with_times,
             "duration": round(duration, 1),
-            "total_notes": len(sargam_notes),
+            "total_notes": len(notes_with_times),
             "sa": sa,
         }
 
     except Exception as e:
-        return {"error": str(e)}
+        import traceback
+        return {"error": str(e), "detail": traceback.format_exc()}
 
     finally:
-        os.unlink(tmp_path)  # clean up the temp file
+        os.unlink(tmp_path)
