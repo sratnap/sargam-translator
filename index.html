@@ -74,8 +74,18 @@
     .note-pa{color:var(--gold);font-weight:700;}
     .note-wrap.active{background:rgba(201,168,76,0.18);outline:1px solid rgba(201,168,76,0.4);}
     .note-wrap.played{opacity:0.45;}
-    .copy-btn{margin-top:20px;padding:8px 18px;background:transparent;border:1px solid var(--border);border-radius:2px;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.72rem;letter-spacing:0.1em;cursor:pointer;transition:all 0.15s ease;}
-    .copy-btn:hover{border-color:var(--gold-dim);color:var(--cream);}
+
+    /* Bottom button row */
+    .btn-row{display:flex;gap:10px;margin-top:20px;}
+    .copy-btn,.export-btn{flex:1;padding:8px 12px;background:transparent;border:1px solid var(--border);border-radius:2px;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.72rem;letter-spacing:0.1em;cursor:pointer;transition:all 0.15s ease;text-align:center;}
+    .copy-btn:hover,.export-btn:hover{border-color:var(--gold-dim);color:var(--cream);}
+    .export-btn.exporting{border-color:var(--gold-dim);color:var(--gold);cursor:not-allowed;}
+
+    /* Export progress bar */
+    .export-progress{display:none;margin-top:12px;height:2px;background:var(--border);border-radius:2px;overflow:hidden;}
+    .export-progress.visible{display:block;}
+    .export-progress-fill{height:100%;background:var(--gold);width:0%;transition:width 0.3s linear;}
+
     .bottom-rule{margin-top:52px;width:100%;max-width:560px;display:flex;align-items:center;gap:12px;}
     .bottom-rule span{flex:1;height:1px;background:var(--border);}
     .bottom-rule p{font-size:0.65rem;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;white-space:nowrap;}
@@ -87,7 +97,7 @@
     <h1>Sargam <em>Translator</em></h1>
     <p>Audio → Hindustani Notation</p>
   </header>
-  <div class="card">
+  <div class="card" id="mainCard">
     <div class="label">Select Sa (Root Pitch)</div>
     <div class="sa-row" id="saRow"></div>
     <div class="label">Audio Input</div>
@@ -123,10 +133,16 @@
         <div class="time-display" id="timeDisplay">0:00 / 0:00</div>
       </div>
       <div class="sargam-output" id="sargamOutput"></div>
-      <button class="copy-btn" id="copyBtn">Copy Sargam</button>
+      <div class="btn-row">
+        <button class="copy-btn" id="copyBtn">Copy Sargam</button>
+        <button class="export-btn" id="exportBtn">Export Video</button>
+      </div>
+      <div class="export-progress" id="exportProgress">
+        <div class="export-progress-fill" id="exportProgressFill"></div>
+      </div>
     </div>
   </div>
-  <div class="bottom-rule"><span></span><p>v2 — synchronized playback</p><span></span></div>
+  <div class="bottom-rule"><span></span><p>v2.1 — export video</p><span></span></div>
   <audio id="audioEl"></audio>
   <script>
     const NOTES=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
@@ -325,6 +341,217 @@
         setTimeout(()=>btn.textContent="Copy Sargam",1800);
       });
     });
+
+    // ── Export Video ─────────────────────────────────────────────────────
+    // How it works:
+    // 1. Capture the output section as a canvas stream (visual)
+    // 2. Capture the audio element as an audio stream
+    // 3. Combine both into a MediaRecorder
+    // 4. Play the audio from the start — the sync loop highlights notes in real time
+    // 5. When audio ends, stop recording and download the .webm file
+
+    document.getElementById("exportBtn").addEventListener("click", exportVideo);
+
+    async function exportVideo() {
+      if(!notesData.length) return;
+
+      const exportBtn = document.getElementById("exportBtn");
+      const exportProgress = document.getElementById("exportProgress");
+      const exportProgressFill = document.getElementById("exportProgressFill");
+
+      // Disable button, show progress bar
+      exportBtn.textContent = "Exporting...";
+      exportBtn.classList.add("exporting");
+      exportBtn.disabled = true;
+      exportProgress.classList.add("visible");
+      exportProgressFill.style.width = "0%";
+
+      // Stop any existing playback
+      audioEl.pause();
+      stopSyncLoop();
+      audioEl.currentTime = 0;
+      highlightAtTime(0);
+
+      try {
+        // Capture the output section as a canvas video stream
+        const outputSection = document.getElementById("outputSection");
+        const canvas = document.createElement("canvas");
+        const scale = window.devicePixelRatio || 1;
+        const rect = outputSection.getBoundingClientRect();
+        canvas.width = rect.width * scale;
+        canvas.height = rect.height * scale;
+        const ctx = canvas.getContext("2d");
+
+        // Draw loop — renders the output section onto the canvas every frame
+        let drawing = true;
+        async function drawLoop() {
+          if (!drawing) return;
+          // Use html2canvas-style approach: draw background + text manually
+          // Since we can't use html2canvas without a library, we use
+          // captureStream on the actual DOM element via OffscreenCanvas trick.
+          // Instead, we'll draw a clean representation directly on canvas.
+          drawFrame(ctx, canvas.width, canvas.height, scale);
+          requestAnimationFrame(drawLoop);
+        }
+
+        function drawFrame(ctx, w, h, scale) {
+          // Background
+          ctx.fillStyle = "#1a1713";
+          ctx.fillRect(0, 0, w, h);
+
+          // Meta row
+          ctx.font = `${11 * scale}px 'DM Mono', monospace`;
+          ctx.fillStyle = "#7a7060";
+          const sa = document.getElementById("metaSa").textContent;
+          const notes = document.getElementById("metaNotes").textContent;
+          const dur = document.getElementById("metaDuration").textContent;
+          ctx.fillText(`Sa: ${sa}`, 20 * scale, 28 * scale);
+          ctx.fillText(`Notes: ${notes}`, w/2 - 30*scale, 28 * scale);
+          ctx.fillText(`Duration: ${dur}`, w - 120 * scale, 28 * scale);
+
+          // Divider
+          ctx.strokeStyle = "#2e2a24";
+          ctx.lineWidth = scale;
+          ctx.beginPath();
+          ctx.moveTo(20 * scale, 40 * scale);
+          ctx.lineTo(w - 20 * scale, 40 * scale);
+          ctx.stroke();
+
+          // Notes
+          const noteEls = document.querySelectorAll(".note-wrap");
+          let x = 20 * scale;
+          let y = 90 * scale;
+          const fontSize = 22 * scale;
+          ctx.font = `${fontSize}px 'Playfair Display', serif`;
+          const lineH = 52 * scale;
+          const maxW = w - 20 * scale;
+
+          noteEls.forEach(el => {
+            const text = el.textContent;
+            const measured = ctx.measureText(text + "  ").width;
+
+            if (x + measured > maxW) {
+              x = 20 * scale;
+              y += lineH;
+            }
+
+            const isActive = el.classList.contains("active");
+            const isPlayed = el.classList.contains("played");
+
+            // Highlight background for active note
+            if (isActive) {
+              ctx.fillStyle = "rgba(201,168,76,0.25)";
+              ctx.beginPath();
+              ctx.roundRect(x - 4*scale, y - fontSize, measured + 4*scale, fontSize + 8*scale, 3*scale);
+              ctx.fill();
+            }
+
+            // Note colour
+            if (isActive) {
+              ctx.fillStyle = "#c9a84c";
+            } else if (isPlayed) {
+              ctx.fillStyle = "rgba(240,230,208,0.35)";
+            } else {
+              const cls = el.className;
+              if (cls.includes("note-sa") || cls.includes("note-pa")) ctx.fillStyle = "#c9a84c";
+              else if (cls.includes("note-komal")) ctx.fillStyle = "#8fbcda";
+              else if (cls.includes("note-tivra")) ctx.fillStyle = "#c48a6a";
+              else ctx.fillStyle = "#f0e6d0";
+            }
+
+            ctx.fillText(text, x, y);
+            x += measured;
+          });
+
+          // Progress bar at bottom
+          const barY = h - 20 * scale;
+          const barW = w - 40 * scale;
+          ctx.fillStyle = "#2e2a24";
+          ctx.beginPath();
+          ctx.roundRect(20*scale, barY, barW, 3*scale, 2*scale);
+          ctx.fill();
+
+          const pct = audioEl.duration ? audioEl.currentTime / audioEl.duration : 0;
+          ctx.fillStyle = "#c9a84c";
+          ctx.beginPath();
+          ctx.roundRect(20*scale, barY, barW * pct, 3*scale, 2*scale);
+          ctx.fill();
+        }
+
+        // Get canvas video stream
+        const videoStream = canvas.captureStream(30); // 30fps
+
+        // Get audio stream from the audio element
+        const audioCtx = new AudioContext();
+        const source = audioCtx.createMediaElementSource(audioEl);
+        const dest = audioCtx.createMediaStreamDestination();
+        source.connect(dest);
+        source.connect(audioCtx.destination); // also play to speakers
+
+        // Combine video + audio
+        const combinedStream = new MediaStream([
+          ...videoStream.getVideoTracks(),
+          ...dest.stream.getAudioTracks()
+        ]);
+
+        const chunks = [];
+        const recorder = new MediaRecorder(combinedStream, {
+          mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+            ? "video/webm;codecs=vp9,opus"
+            : "video/webm"
+        });
+        recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
+
+        // When audio ends, stop recording
+        recorder.onstop = () => {
+          drawing = false;
+          const blob = new Blob(chunks, { type: "video/webm" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `sargam-${selectedSa}-${Date.now()}.webm`;
+          a.click();
+          URL.revokeObjectURL(url);
+
+          // Reset button
+          exportBtn.textContent = "Export Video";
+          exportBtn.classList.remove("exporting");
+          exportBtn.disabled = false;
+          exportProgress.classList.remove("visible");
+          exportProgressFill.style.width = "0%";
+        };
+
+        // Progress bar update during export
+        audioEl.ontimeupdate = () => {
+          updateProgressBar();
+          if (audioEl.duration) {
+            exportProgressFill.style.width = ((audioEl.currentTime / audioEl.duration) * 100) + "%";
+          }
+        };
+
+        audioEl.onended = () => {
+          document.getElementById("playBtn").textContent = "▶";
+          stopSyncLoop();
+          recorder.stop();
+          audioCtx.close();
+        };
+
+        // Start everything
+        recorder.start(100);
+        drawLoop();
+        startSyncLoop();
+        await audioEl.play();
+        document.getElementById("playBtn").textContent = "⏸";
+
+      } catch(err) {
+        console.error("Export failed:", err);
+        exportBtn.textContent = "Export Video";
+        exportBtn.classList.remove("exporting");
+        exportBtn.disabled = false;
+        exportProgress.classList.remove("visible");
+        alert("Export failed: " + err.message);
+      }
+    }
   </script>
 </body>
 </html>
