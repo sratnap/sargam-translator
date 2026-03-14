@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Sargam Translator</title>
+  <title>SurSargam</title>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -76,70 +76,19 @@
     .note-pa{color:var(--gold);font-weight:700;}
     .note-wrap.active{background:rgba(201,168,76,0.18);outline:1px solid rgba(201,168,76,0.4);}
     .note-wrap.played{opacity:0.45;}
-    /* Corrected note indicator — small gold dot underneath */
     .note-wrap.corrected::after{content:'';position:absolute;bottom:-3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--gold);opacity:0.7;}
 
     /* iMessage-style context menu overlay */
-    .editor-backdrop{
-      position:fixed;inset:0;z-index:200;
-      background:rgba(10,8,6,0.7);
-      backdrop-filter:blur(6px);
-      -webkit-backdrop-filter:blur(6px);
-      opacity:0;pointer-events:none;
-      transition:opacity 0.2s ease;
-    }
+    .editor-backdrop{position:fixed;inset:0;z-index:200;background:rgba(10,8,6,0.7);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity 0.2s ease;}
     .editor-backdrop.visible{opacity:1;pointer-events:all;}
-
-    /* The lifted note shown in the overlay */
-    .editor-lifted-note{
-      position:fixed;z-index:210;
-      font-family:'Playfair Display',serif;
-      font-size:1.6rem;
-      padding:6px 14px;
-      border-radius:6px;
-      background:var(--surface);
-      border:1px solid var(--gold-dim);
-      box-shadow:0 12px 40px rgba(0,0,0,0.8);
-      transform:scale(1.15);
-      pointer-events:none;
-      transition:all 0.18s cubic-bezier(0.34,1.56,0.64,1);
-    }
-
-    /* Picker pill below the lifted note */
-    .note-picker{
-      position:fixed;z-index:210;
-      background:#242018;
-      border:1px solid var(--border);
-      border-radius:12px;
-      padding:6px;
-      display:none;
-      flex-wrap:wrap;
-      gap:4px;
-      max-width:320px;
-      box-shadow:0 8px 32px rgba(0,0,0,0.7);
-      transition:opacity 0.15s ease, transform 0.15s ease;
-    }
+    .editor-lifted-note{position:fixed;z-index:210;font-family:'Playfair Display',serif;font-size:1.6rem;padding:6px 14px;border-radius:6px;background:var(--surface);border:1px solid var(--gold-dim);box-shadow:0 12px 40px rgba(0,0,0,0.8);transform:scale(1.15);pointer-events:none;transition:all 0.18s cubic-bezier(0.34,1.56,0.64,1);}
+    .note-picker{position:fixed;z-index:210;background:#242018;border:1px solid var(--border);border-radius:12px;padding:6px;display:none;flex-wrap:wrap;gap:4px;max-width:320px;box-shadow:0 8px 32px rgba(0,0,0,0.7);transition:opacity 0.15s ease, transform 0.15s ease;}
     .note-picker.visible{display:flex;}
-    .note-option{
-      padding:7px 11px;
-      border:none;
-      border-radius:8px;
-      background:transparent;
-      color:var(--muted);
-      font-family:'Playfair Display',serif;
-      font-size:1rem;
-      cursor:pointer;
-      transition:all 0.1s ease;
-      min-width:36px;
-      text-align:center;
-    }
+    .note-option{padding:7px 11px;border:none;border-radius:8px;background:transparent;color:var(--muted);font-family:'Playfair Display',serif;font-size:1rem;cursor:pointer;transition:all 0.1s ease;min-width:36px;text-align:center;}
     .note-option:hover{background:rgba(201,168,76,0.12);color:var(--cream);}
     .note-option.current{background:rgba(201,168,76,0.18);color:var(--gold);font-weight:700;}
 
-    /* Hint text */
     .edit-hint{font-size:0.68rem;color:var(--muted);letter-spacing:0.08em;margin-bottom:12px;}
-
-    /* Bottom button row */
     .btn-row{display:flex;gap:10px;margin-top:20px;}
     .copy-btn,.export-btn{flex:1;padding:8px 12px;background:transparent;border:1px solid var(--border);border-radius:2px;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.72rem;letter-spacing:0.1em;cursor:pointer;transition:all 0.15s ease;text-align:center;}
     .copy-btn:hover,.export-btn:hover{border-color:var(--gold-dim);color:var(--cream);}
@@ -160,6 +109,30 @@
     .shortcuts-close{margin-top:18px;width:100%;padding:8px;background:transparent;border:1px solid var(--border);border-radius:2px;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.72rem;cursor:pointer;transition:all 0.15s ease;}
     .shortcuts-close:hover{border-color:var(--gold-dim);color:var(--cream);}
 
+    /* ── Line editor ─────────────────────────────────────────── */
+    .line-editor-wrap{display:none;flex-direction:column;gap:6px;margin-bottom:8px;}
+    .line-editor-wrap.visible{display:flex;}
+    .line-editor-hint{font-size:0.68rem;color:var(--muted);letter-spacing:0.08em;margin-bottom:4px;line-height:1.6;}
+    .line-editor-hint span{color:var(--gold);font-weight:500;}
+    .line-row{display:flex;align-items:center;gap:8px;}
+    .line-num{font-size:0.65rem;color:var(--gold-dim);width:20px;text-align:right;flex-shrink:0;}
+    .line-input{flex:1;background:#111009;border:1px solid var(--border);border-radius:3px;padding:8px 12px;color:var(--cream);font-family:'Playfair Display',serif;font-size:1rem;letter-spacing:0.06em;line-height:1.5;resize:none;outline:none;transition:border-color 0.15s ease;overflow:hidden;}
+    .line-input:focus{border-color:var(--gold-dim);}
+    .line-input.has-error{border-color:var(--error);}
+    .line-error{font-size:0.65rem;color:var(--error);padding:2px 8px;}
+    .line-editor-actions{display:flex;gap:8px;margin-top:8px;}
+    .line-apply-btn{padding:8px 18px;background:var(--gold);border:none;border-radius:2px;color:#0e0c0a;font-family:'DM Mono',monospace;font-size:0.75rem;font-weight:500;letter-spacing:0.1em;cursor:pointer;transition:all 0.15s ease;}
+    .line-apply-btn:hover{background:#d4b45a;}
+    .line-cancel-btn{padding:8px 14px;background:transparent;border:1px solid var(--border);border-radius:2px;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.75rem;cursor:pointer;transition:all 0.15s ease;}
+    .line-cancel-btn:hover{border-color:var(--gold-dim);color:var(--cream);}
+
+    /* Script toggle */
+    .script-toggle{display:inline-flex;align-items:center;gap:0;border:1px solid var(--border);border-radius:3px;overflow:hidden;}
+    .script-btn{padding:4px 10px;background:transparent;border:none;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.68rem;cursor:pointer;transition:all 0.15s ease;letter-spacing:0.06em;}
+    .script-btn:first-child{border-right:1px solid var(--border);}
+    .script-btn.active{background:rgba(201,168,76,0.12);color:var(--gold);}
+    .script-btn:hover:not(.active){color:var(--cream);}
+
     .bottom-rule{margin-top:52px;width:100%;max-width:560px;display:flex;align-items:center;gap:12px;}
     .bottom-rule span{flex:1;height:1px;background:var(--border);}
     .bottom-rule p{font-size:0.65rem;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;white-space:nowrap;}
@@ -168,8 +141,8 @@
 <body>
   <div class="top-rule"><span></span><div class="diamond"></div><span></span></div>
   <header>
-    <h1>Sargam <em>Translator</em></h1>
-    <p>Audio → Hindustani Notation</p>
+    <h1>Sur<em>Sargam</em></h1>
+    <p>sur to sargam</p>
   </header>
   <div class="card" id="mainCard">
     <div class="label">Select Sa (Root Pitch)</div>
@@ -193,6 +166,7 @@
     <button class="translate-btn" id="translateBtn" disabled>Translate to Sargam</button>
     <div style="padding:16px 0 0;display:none" id="loadingRow"><div class="spinner active"></div></div>
     <div class="error-msg" id="errorMsg"></div>
+
     <div class="output-section" id="outputSection">
       <div class="output-meta">
         <div>Sa: <b id="metaSa">—</b></div>
@@ -206,18 +180,41 @@
         </div>
         <div class="time-display" id="timeDisplay">0:00 / 0:00</div>
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-        <div class="edit-hint" style="margin-bottom:0">Hold any note to correct it</div>
-        <div style="display:flex;gap:6px;align-items:center;">
+
+      <!-- Toolbar -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div class="edit-hint" style="margin-bottom:0" id="editHint">Hold any note to correct it</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <!-- Script toggle -->
+          <div class="script-toggle" title="Switch between Roman and Devanagari notation">
+            <button class="script-btn active" id="scriptRoman" onclick="setScript('roman')">Sa</button>
+            <button class="script-btn" id="scriptDev" onclick="setScript('devanagari')">सा</button>
+          </div>
           <button class="copy-btn" id="undoBtn" style="margin-top:0;flex:none;padding:5px 10px;opacity:0.4" title="Undo (Ctrl+Z)">↩</button>
           <button class="copy-btn" id="redoBtn" style="margin-top:0;flex:none;padding:5px 10px;opacity:0.4" title="Redo (Ctrl+Y)">↪</button>
           <button class="copy-btn" id="resetBtn" style="margin-top:0;flex:none;padding:5px 10px" title="Reset all corrections">↺ Reset</button>
           <button class="copy-btn" id="editModeBtn" style="margin-top:0;flex:none;padding:5px 12px" onclick="toggleEditMode()">✎ Edit</button>
+          <button class="copy-btn" id="lineEditBtn" style="margin-top:0;flex:none;padding:5px 12px" onclick="toggleLineEditor()" title="Edit multiple notes at once">☰ Lines</button>
           <button class="copy-btn" id="shortcutsBtn" style="margin-top:0;flex:none;padding:5px 10px" title="Keyboard shortcuts">?</button>
         </div>
       </div>
+
+      <!-- Normal note display -->
       <div class="sargam-output" id="sargamOutput"></div>
-      <!-- iMessage-style editor: backdrop + lifted note + picker live in body, added by JS -->
+
+      <!-- Line editor -->
+      <div class="line-editor-wrap" id="lineEditorWrap">
+        <div class="line-editor-hint">
+          Each line is <span>8 notes</span>. Edit freely — separate notes with spaces.<br/>
+          Use Roman (S r R g G M M' P d D n N) or Devanagari. Add <span>.</span> or <span>,</span> for octave.
+        </div>
+        <div id="lineEditorLines"></div>
+        <div class="line-editor-actions">
+          <button class="line-apply-btn" onclick="applyLineEdits()">Apply Changes</button>
+          <button class="line-cancel-btn" onclick="cancelLineEditor()">Cancel</button>
+        </div>
+      </div>
+
       <div class="btn-row">
         <button class="copy-btn" id="copyBtn">Copy Sargam</button>
         <button class="export-btn" id="exportBtn">Export Video</button>
@@ -227,7 +224,7 @@
       </div>
     </div>
   </div>
-  <div class="bottom-rule"><span></span><p>v2.2 — note editor</p><span></span></div>
+  <div class="bottom-rule"><span></span><p>v2.3 — SurSargam</p><span></span></div>
   <audio id="audioEl"></audio>
 
   <!-- Shortcuts modal -->
@@ -240,15 +237,58 @@
       <div class="shortcut-row"><span class="shortcut-desc">Undo correction</span><span class="shortcut-key">Ctrl Z</span></div>
       <div class="shortcut-row"><span class="shortcut-desc">Redo correction</span><span class="shortcut-key">Ctrl Y</span></div>
       <div class="shortcut-row"><span class="shortcut-desc">Close editor / modal</span><span class="shortcut-key">Esc</span></div>
-      <div class="shortcut-row"><span class="shortcut-desc">Toggle edit mode</span><span class="shortcut-key">E</span></div>
+      <div class="shortcut-row"><span class="shortcut-desc">Toggle note edit mode</span><span class="shortcut-key">E</span></div>
+      <div class="shortcut-row"><span class="shortcut-desc">Toggle line editor</span><span class="shortcut-key">L</span></div>
+      <div class="shortcut-row"><span class="shortcut-desc">Switch script (Roman/Devanagari)</span><span class="shortcut-key">D</span></div>
       <button class="shortcuts-close" onclick="document.getElementById('shortcutsBackdrop').classList.remove('visible')">Close</button>
     </div>
   </div>
 
   <script>
-    // ── All 12 sargam options shown in the editor ────────────────
+    // ── Sargam data ──────────────────────────────────────────────
     const SARGAM_OPTIONS = ["S","r","R","g","G","M","M'","P","d","D","n","N"];
     const OCTAVE_SUFFIXES = ["", ".", ","];
+
+    // Devanagari mapping (Roman base → Devanagari base)
+    const DEV_MAP = {
+      "S":"सा", "r":"रे॒", "R":"रे", "g":"ग॒", "G":"ग",
+      "M":"म",  "M'":"म॑", "P":"प",  "d":"ध॒", "D":"ध",
+      "n":"नि॒","N":"नि"
+    };
+    // Reverse: Devanagari base → Roman base (for parsing line editor input)
+    const DEV_TO_ROMAN = {};
+    Object.entries(DEV_MAP).forEach(([r,d])=>{ DEV_TO_ROMAN[d]=r; });
+
+    // Convert a Roman note (with octave suffix) to display string
+    function toDisplay(romanNote, script) {
+      if(script === 'roman') return romanNote;
+      // Split octave suffix
+      let base = romanNote.replace(/[.,]+$/, "");
+      let suffix = romanNote.slice(base.length);
+      const dev = DEV_MAP[base] || romanNote;
+      // Devanagari octave: use the same . and , conventions for now
+      return dev + suffix;
+    }
+
+    // Parse a display token back to Roman (for line editor apply)
+    function toRoman(token, script) {
+      if(script === 'roman') return token;
+      let base = token.replace(/[.,]+$/, "");
+      let suffix = token.slice(base.length);
+      const roman = DEV_TO_ROMAN[base];
+      if(roman) return roman + suffix;
+      // Might already be Roman (user typed Roman in Devanagari mode — accept it)
+      return token;
+    }
+
+    // Validate a Roman note token
+    function isValidRoman(token) {
+      const base = token.replace(/[.,]+$/, "");
+      const suffix = token.slice(base.length);
+      if(!SARGAM_OPTIONS.includes(base)) return false;
+      if(suffix && !/^[.]+$|^[,]+$/.test(suffix)) return false;
+      return true;
+    }
 
     const NOTES=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
     let selectedSa="C",selectedFile=null,recordedBlob=null,mediaRecorder=null;
@@ -257,21 +297,25 @@
     let activeEditorIndex = -1;
     let editMode = false;
     let longPressTimer = null;
-    let originalNotesData = [];   // snapshot at translation time for Reset
-    let undoStack = [];           // each entry is a full notesData snapshot
+    let originalNotesData = [];
+    let undoStack = [];
     let redoStack = [];
+    let currentScript = 'roman'; // 'roman' | 'devanagari'
+    let lineEditorOpen = false;
+    const NOTES_PER_LINE = 8;
+
     const audioEl=document.getElementById("audioEl");
 
     function saveUndoSnapshot(){
       undoStack.push(JSON.parse(JSON.stringify(notesData)));
-      redoStack = []; // clear redo on new action
+      redoStack = [];
       updateUndoRedoBtns();
     }
     function updateUndoRedoBtns(){
-      const u = document.getElementById("undoBtn");
-      const r = document.getElementById("redoBtn");
-      if(u){ u.style.opacity = undoStack.length ? "1" : "0.4"; u.disabled = !undoStack.length; }
-      if(r){ r.style.opacity = redoStack.length ? "1" : "0.4"; r.disabled = !redoStack.length; }
+      const u=document.getElementById("undoBtn");
+      const r=document.getElementById("redoBtn");
+      if(u){u.style.opacity=undoStack.length?"1":"0.4";u.disabled=!undoStack.length;}
+      if(r){r.style.opacity=redoStack.length?"1":"0.4";r.disabled=!redoStack.length;}
     }
 
     // ── Sa buttons ───────────────────────────────────────────────
@@ -406,9 +450,9 @@
     // ── Render output ────────────────────────────────────────────
     function renderOutput(data){
       notesData=data.sargam;
-      originalNotesData = JSON.parse(JSON.stringify(notesData)); // snapshot for Reset
-      undoStack = [];
-      redoStack = [];
+      originalNotesData=JSON.parse(JSON.stringify(notesData));
+      undoStack=[];
+      redoStack=[];
       updateUndoRedoBtns();
       document.getElementById("metaSa").textContent=data.sa;
       document.getElementById("metaNotes").textContent=data.total_notes;
@@ -420,58 +464,197 @@
     function rebuildNoteSpans(){
       const container=document.getElementById("sargamOutput");
       container.innerHTML=notesData.map((item,i)=>{
-        const corrected = item.corrected ? " corrected" : "";
-        return `<span class="note-wrap ${noteClass(item.note)}${corrected}" data-index="${i}" data-time="${item.time}">${item.note}</span>`;
+        const corrected=item.corrected?" corrected":"";
+        const displayText=toDisplay(item.note, currentScript);
+        return `<span class="note-wrap ${noteClass(item.note)}${corrected}" data-index="${i}" data-time="${item.time}">${displayText}</span>`;
       }).join(" ");
 
       container.querySelectorAll(".note-wrap").forEach(el=>{
-        const idx = ()=>parseInt(el.dataset.index);
-        const time = ()=>parseFloat(el.dataset.time);
-
-        // ── Single click: seek (normal) or edit (edit mode) ──
-        el.addEventListener("click", e=>{
+        const idx=()=>parseInt(el.dataset.index);
+        const time=()=>parseFloat(el.dataset.time);
+        el.addEventListener("click",e=>{
           e.stopPropagation();
-          if(editMode){ openEditor(idx(), el); }
-          else { seekToNote(time()); }
+          if(editMode){openEditor(idx(),el);}
+          else{seekToNote(time());}
         });
-
-        // ── Long press: always opens editor regardless of mode ──
-        el.addEventListener("mousedown", ()=>{
-          longPressTimer = setTimeout(()=>{ openEditor(idx(), el); }, 500);
+        el.addEventListener("mousedown",()=>{
+          longPressTimer=setTimeout(()=>openEditor(idx(),el),500);
         });
-        el.addEventListener("mouseup", ()=>clearTimeout(longPressTimer));
-        el.addEventListener("mouseleave", ()=>clearTimeout(longPressTimer));
-
-        // Touch support for mobile
-        el.addEventListener("touchstart", e=>{
-          longPressTimer = setTimeout(()=>{
-            e.preventDefault();
-            openEditor(idx(), el);
-          }, 500);
-        }, {passive:true});
-        el.addEventListener("touchend", ()=>clearTimeout(longPressTimer));
-        el.addEventListener("touchmove", ()=>clearTimeout(longPressTimer));
+        el.addEventListener("mouseup",()=>clearTimeout(longPressTimer));
+        el.addEventListener("mouseleave",()=>clearTimeout(longPressTimer));
+        el.addEventListener("touchstart",e=>{
+          longPressTimer=setTimeout(()=>{e.preventDefault();openEditor(idx(),el);},500);
+        },{passive:true});
+        el.addEventListener("touchend",()=>clearTimeout(longPressTimer));
+        el.addEventListener("touchmove",()=>clearTimeout(longPressTimer));
       });
+    }
+
+    // ── Script toggle (Roman / Devanagari) ───────────────────────
+    function setScript(script){
+      currentScript=script;
+      document.getElementById("scriptRoman").classList.toggle("active",script==="roman");
+      document.getElementById("scriptDev").classList.toggle("active",script==="devanagari");
+      // Rebuild spans with new script
+      rebuildNoteSpans();
+      // If line editor is open, rebuild it too
+      if(lineEditorOpen) buildLineEditorLines();
     }
 
     // ── Edit mode toggle ─────────────────────────────────────────
     function toggleEditMode(){
-      editMode = !editMode;
-      const btn = document.getElementById("editModeBtn");
+      editMode=!editMode;
+      const btn=document.getElementById("editModeBtn");
       if(editMode){
-        btn.textContent = "✓ Edit Mode On";
-        btn.style.borderColor = "var(--gold-dim)";
-        btn.style.color = "var(--gold)";
-        // Pause audio while editing
+        btn.textContent="✓ Edit Mode On";
+        btn.style.borderColor="var(--gold-dim)";
+        btn.style.color="var(--gold)";
         audioEl.pause();
         document.getElementById("playBtn").textContent="▶";
         stopSyncLoop();
-      } else {
-        btn.textContent = "✎ Edit Notes";
-        btn.style.borderColor = "";
-        btn.style.color = "";
+      }else{
+        btn.textContent="✎ Edit";
+        btn.style.borderColor="";
+        btn.style.color="";
         closeEditor();
       }
+    }
+
+    // ── Line editor ──────────────────────────────────────────────
+    function toggleLineEditor(){
+      if(lineEditorOpen){
+        cancelLineEditor();
+      } else {
+        openLineEditor();
+      }
+    }
+
+    function openLineEditor(){
+      lineEditorOpen=true;
+      // Pause playback
+      audioEl.pause();
+      document.getElementById("playBtn").textContent="▶";
+      stopSyncLoop();
+      closeEditor();
+      // Hide normal output, show line editor
+      document.getElementById("sargamOutput").style.display="none";
+      document.getElementById("lineEditorWrap").classList.add("visible");
+      // Update button
+      const btn=document.getElementById("lineEditBtn");
+      btn.textContent="✓ Lines On";
+      btn.style.borderColor="var(--gold-dim)";
+      btn.style.color="var(--gold)";
+      // Update hint
+      document.getElementById("editHint").textContent="Editing by lines — apply when done";
+      buildLineEditorLines();
+    }
+
+    function buildLineEditorLines(){
+      const container=document.getElementById("lineEditorLines");
+      container.innerHTML="";
+      // Split notesData into chunks of NOTES_PER_LINE
+      for(let i=0;i<notesData.length;i+=NOTES_PER_LINE){
+        const chunk=notesData.slice(i,i+NOTES_PER_LINE);
+        const lineIndex=Math.floor(i/NOTES_PER_LINE);
+        const lineText=chunk.map(n=>toDisplay(n.note,currentScript)).join(" ");
+
+        const row=document.createElement("div");
+        row.className="line-row";
+
+        const num=document.createElement("div");
+        num.className="line-num";
+        num.textContent=lineIndex+1;
+
+        const input=document.createElement("textarea");
+        input.className="line-input";
+        input.rows=1;
+        input.value=lineText;
+        input.dataset.lineIndex=lineIndex;
+        input.dataset.startNote=i;
+        input.dataset.endNote=Math.min(i+NOTES_PER_LINE,notesData.length);
+
+        // Auto-resize textarea to content
+        input.addEventListener("input",()=>{
+          input.style.height="auto";
+          input.style.height=input.scrollHeight+"px";
+          input.classList.remove("has-error");
+          // Remove any error message for this line
+          const existingErr=row.nextElementSibling;
+          if(existingErr&&existingErr.classList.contains("line-error"))existingErr.remove();
+        });
+
+        row.appendChild(num);
+        row.appendChild(input);
+        container.appendChild(row);
+
+        // Initial auto-size
+        setTimeout(()=>{
+          input.style.height="auto";
+          input.style.height=input.scrollHeight+"px";
+        },0);
+      }
+    }
+
+    function applyLineEdits(){
+      const inputs=document.querySelectorAll(".line-input");
+      let hasErrors=false;
+      // First pass: validate all lines
+      inputs.forEach(input=>{
+        const tokens=input.value.trim().split(/\s+/).filter(Boolean);
+        // Remove any existing error
+        const row=input.closest(".line-row");
+        const existingErr=row.nextElementSibling;
+        if(existingErr&&existingErr.classList.contains("line-error"))existingErr.remove();
+        input.classList.remove("has-error");
+
+        // Convert tokens to Roman for validation
+        const romanTokens=tokens.map(t=>toRoman(t,currentScript));
+        const invalid=romanTokens.filter(t=>!isValidRoman(t));
+        if(invalid.length>0){
+          hasErrors=true;
+          input.classList.add("has-error");
+          const errEl=document.createElement("div");
+          errEl.className="line-error";
+          errEl.textContent=`Unknown note${invalid.length>1?"s":""}: ${invalid.join(", ")} — use S r R g G M M' P d D n N (add . or , for octave)`;
+          row.after(errEl);
+        }
+      });
+      if(hasErrors)return;
+
+      // Second pass: apply
+      saveUndoSnapshot();
+      const newNotesData=[];
+      inputs.forEach(input=>{
+        const startNote=parseInt(input.dataset.startNote);
+        const tokens=input.value.trim().split(/\s+/).filter(Boolean);
+        tokens.forEach((token,i)=>{
+          const romanNote=toRoman(token,currentScript);
+          const originalIndex=startNote+i;
+          // Preserve existing time and corrected flag if possible; mark corrected if changed
+          const original=notesData[originalIndex];
+          const wasChanged=!original||original.note!==romanNote;
+          newNotesData.push({
+            note:romanNote,
+            time:original?original.time:(notesData[startNote]?notesData[startNote].time+(i*0.1):i*0.1),
+            corrected:wasChanged||!!(original&&original.corrected)
+          });
+        });
+      });
+      notesData=newNotesData;
+      document.getElementById("metaNotes").textContent=notesData.length;
+      cancelLineEditor();
+      rebuildNoteSpans();
+    }
+
+    function cancelLineEditor(){
+      lineEditorOpen=false;
+      document.getElementById("sargamOutput").style.display="";
+      document.getElementById("lineEditorWrap").classList.remove("visible");
+      const btn=document.getElementById("lineEditBtn");
+      btn.textContent="☰ Lines";
+      btn.style.borderColor="";
+      btn.style.color="";
+      document.getElementById("editHint").textContent="Hold any note to correct it";
     }
 
     // ── Playback controls ────────────────────────────────────────
@@ -512,239 +695,221 @@
         if(i===activeIndex){
           el.classList.add("active");
           el.scrollIntoView({behavior:"smooth",block:"nearest",inline:"nearest"});
-        } else if(i<activeIndex){
+        }else if(i<activeIndex){
           el.classList.add("played");
         }
       });
     }
 
     // ── iMessage-style note editor ───────────────────────────────
-    // Elements are created fresh each time editor opens and removed on close
-    let backdrop = null, liftedNote = null, notePicker = null;
+    let backdrop=null,liftedNote=null,notePicker=null;
 
-    function openEditor(index, anchorEl){
-      // Clean up any existing editor first
+    function openEditor(index,anchorEl){
       closeEditor();
+      activeEditorIndex=index;
+      const currentNote=notesData[index].note;
+      const rect=anchorEl.getBoundingClientRect();
 
-      activeEditorIndex = index;
-      const currentNote = notesData[index].note;
-      const rect = anchorEl.getBoundingClientRect();
-
-      // Create backdrop
-      backdrop = document.createElement("div");
-      backdrop.className = "editor-backdrop visible";
-      backdrop.addEventListener("click", closeEditor);
+      backdrop=document.createElement("div");
+      backdrop.className="editor-backdrop visible";
+      backdrop.addEventListener("click",closeEditor);
       document.body.appendChild(backdrop);
 
-      // Create lifted note clone — positioned exactly over the original
-      liftedNote = document.createElement("div");
-      liftedNote.className = "editor-lifted-note " + noteClass(currentNote);
-      liftedNote.textContent = currentNote;
-      liftedNote.style.left = rect.left + "px";
-      liftedNote.style.top = rect.top + "px";
+      liftedNote=document.createElement("div");
+      liftedNote.className="editor-lifted-note "+noteClass(currentNote);
+      liftedNote.textContent=toDisplay(currentNote,currentScript);
+      liftedNote.style.left=rect.left+"px";
+      liftedNote.style.top=rect.top+"px";
       document.body.appendChild(liftedNote);
 
-      // Create picker
-      notePicker = document.createElement("div");
-      notePicker.className = "note-picker";
+      notePicker=document.createElement("div");
+      notePicker.className="note-picker";
       document.body.appendChild(notePicker);
 
-      // Delete button — first in picker, styled in red
-      const delBtn = document.createElement("button");
-      delBtn.className = "note-option";
-      delBtn.textContent = "✕ delete";
-      delBtn.style.color = "var(--error)";
-      delBtn.style.fontFamily = "'DM Mono', monospace";
-      delBtn.style.fontSize = "0.75rem";
-      delBtn.style.width = "100%";
-      delBtn.style.borderTop = "none";
-      delBtn.style.borderBottom = "1px solid var(--border)";
-      delBtn.style.borderRadius = "6px 6px 0 0";
-      delBtn.style.paddingBottom = "8px";
-      delBtn.style.marginBottom = "2px";
-      delBtn.addEventListener("click", e=>{
+      // Delete button
+      const delBtn=document.createElement("button");
+      delBtn.className="note-option";
+      delBtn.textContent="✕ delete";
+      delBtn.style.color="var(--error)";
+      delBtn.style.fontFamily="'DM Mono', monospace";
+      delBtn.style.fontSize="0.75rem";
+      delBtn.style.width="100%";
+      delBtn.style.borderBottom="1px solid var(--border)";
+      delBtn.style.borderRadius="6px 6px 0 0";
+      delBtn.style.paddingBottom="8px";
+      delBtn.style.marginBottom="2px";
+      delBtn.addEventListener("click",e=>{
         e.stopPropagation();
         saveUndoSnapshot();
-        notesData.splice(index, 1);
+        notesData.splice(index,1);
         closeEditor();
         rebuildNoteSpans();
-        document.getElementById("metaNotes").textContent = notesData.length;
+        document.getElementById("metaNotes").textContent=notesData.length;
       });
       notePicker.appendChild(delBtn);
 
-      // Insert note button — adds a new S after this note
-      const insertBtn = document.createElement("button");
-      insertBtn.className = "note-option";
-      insertBtn.textContent = "+ insert after";
-      insertBtn.style.color = "var(--blue)";
-      insertBtn.style.fontFamily = "'DM Mono', monospace";
-      insertBtn.style.fontSize = "0.75rem";
-      insertBtn.style.width = "100%";
-      insertBtn.style.borderBottom = "1px solid var(--border)";
-      insertBtn.style.borderRadius = "0";
-      insertBtn.style.paddingBottom = "8px";
-      insertBtn.style.marginBottom = "2px";
-      insertBtn.addEventListener("click", e=>{
+      // Insert button
+      const insertBtn=document.createElement("button");
+      insertBtn.className="note-option";
+      insertBtn.textContent="+ insert after";
+      insertBtn.style.color="var(--blue)";
+      insertBtn.style.fontFamily="'DM Mono', monospace";
+      insertBtn.style.fontSize="0.75rem";
+      insertBtn.style.width="100%";
+      insertBtn.style.borderBottom="1px solid var(--border)";
+      insertBtn.style.borderRadius="0";
+      insertBtn.style.paddingBottom="8px";
+      insertBtn.style.marginBottom="2px";
+      insertBtn.addEventListener("click",e=>{
         e.stopPropagation();
         saveUndoSnapshot();
-        // Insert a new S after this note, inheriting the same timestamp + 0.1s
-        const newNote = { note: "S", time: notesData[index].time + 0.1, corrected: true };
-        notesData.splice(index + 1, 0, newNote);
+        const newNote={note:"S",time:notesData[index].time+0.1,corrected:true};
+        notesData.splice(index+1,0,newNote);
         closeEditor();
         rebuildNoteSpans();
-        document.getElementById("metaNotes").textContent = notesData.length;
-        // Immediately open editor on the newly inserted note so user can set it
-        const newEl = document.querySelectorAll(".note-wrap")[index + 1];
-        if(newEl) setTimeout(()=>openEditor(index + 1, newEl), 50);
+        document.getElementById("metaNotes").textContent=notesData.length;
+        const newEl=document.querySelectorAll(".note-wrap")[index+1];
+        if(newEl)setTimeout(()=>openEditor(index+1,newEl),50);
       });
       notePicker.appendChild(insertBtn);
+
+      // Note options — show in current script
       SARGAM_OPTIONS.forEach(swara=>{
         OCTAVE_SUFFIXES.forEach(suffix=>{
-          const fullNote = swara + suffix;
-          const btn = document.createElement("button");
-          btn.className = "note-option " + noteClass(fullNote) + (fullNote === currentNote ? " current" : "");
-          btn.textContent = fullNote;
-          btn.addEventListener("click", e=>{
+          const fullNote=swara+suffix;
+          const btn=document.createElement("button");
+          btn.className="note-option "+noteClass(fullNote)+(fullNote===currentNote?" current":"");
+          btn.textContent=toDisplay(fullNote,currentScript);
+          btn.addEventListener("click",e=>{
             e.stopPropagation();
-            applyCorrection(index, fullNote);
+            applyCorrection(index,fullNote);
           });
           notePicker.appendChild(btn);
         });
       });
 
-      // Position picker — prefer below, flip above if near bottom of viewport
-      notePicker.style.display = "flex";
-      notePicker.style.visibility = "hidden";
+      // Position picker
+      notePicker.style.display="flex";
+      notePicker.style.visibility="hidden";
       requestAnimationFrame(()=>{
-        const pickerH = notePicker.offsetHeight || 120;
-        const pickerW = Math.min(320, window.innerWidth - 16);
-        const pickerLeft = Math.min(
-          Math.max(rect.left - pickerW/2 + rect.width/2, 8),
-          window.innerWidth - pickerW - 8
-        );
-        const spaceBelow = window.innerHeight - rect.bottom - 16;
-        const pickerTop = spaceBelow >= pickerH
-          ? rect.bottom + 12
-          : rect.top - pickerH - 12;
-        notePicker.style.left = pickerLeft + "px";
-        notePicker.style.top = Math.max(8, pickerTop) + "px";
-        notePicker.style.maxWidth = pickerW + "px";
-        notePicker.style.visibility = "visible";
+        const pickerH=notePicker.offsetHeight||120;
+        const pickerW=Math.min(320,window.innerWidth-16);
+        const pickerLeft=Math.min(Math.max(rect.left-pickerW/2+rect.width/2,8),window.innerWidth-pickerW-8);
+        const spaceBelow=window.innerHeight-rect.bottom-16;
+        const pickerTop=spaceBelow>=pickerH?rect.bottom+12:rect.top-pickerH-12;
+        notePicker.style.left=pickerLeft+"px";
+        notePicker.style.top=Math.max(8,pickerTop)+"px";
+        notePicker.style.maxWidth=pickerW+"px";
+        notePicker.style.visibility="visible";
         notePicker.classList.add("visible");
       });
     }
 
     function closeEditor(){
-      if(backdrop){ backdrop.remove(); backdrop = null; }
-      if(liftedNote){ liftedNote.remove(); liftedNote = null; }
-      if(notePicker){ notePicker.remove(); notePicker = null; }
-      activeEditorIndex = -1;
+      if(backdrop){backdrop.remove();backdrop=null;}
+      if(liftedNote){liftedNote.remove();liftedNote=null;}
+      if(notePicker){notePicker.remove();notePicker=null;}
+      activeEditorIndex=-1;
     }
 
-    function applyCorrection(index, newNote){
+    function applyCorrection(index,newNote){
       saveUndoSnapshot();
-      notesData[index].note = newNote;
-      notesData[index].corrected = true;
+      notesData[index].note=newNote;
+      notesData[index].corrected=true;
       closeEditor();
       rebuildNoteSpans();
-      document.getElementById("metaNotes").textContent = notesData.length;
+      document.getElementById("metaNotes").textContent=notesData.length;
     }
 
     // ── Undo / Redo ──────────────────────────────────────────────
-    document.getElementById("undoBtn").addEventListener("click", doUndo);
-    document.getElementById("redoBtn").addEventListener("click", doRedo);
-
+    document.getElementById("undoBtn").addEventListener("click",doUndo);
+    document.getElementById("redoBtn").addEventListener("click",doRedo);
     function doUndo(){
-      if(!undoStack.length) return;
+      if(!undoStack.length)return;
       redoStack.push(JSON.parse(JSON.stringify(notesData)));
-      notesData = undoStack.pop();
+      notesData=undoStack.pop();
       rebuildNoteSpans();
-      document.getElementById("metaNotes").textContent = notesData.length;
+      document.getElementById("metaNotes").textContent=notesData.length;
       updateUndoRedoBtns();
     }
     function doRedo(){
-      if(!redoStack.length) return;
+      if(!redoStack.length)return;
       undoStack.push(JSON.parse(JSON.stringify(notesData)));
-      notesData = redoStack.pop();
+      notesData=redoStack.pop();
       rebuildNoteSpans();
-      document.getElementById("metaNotes").textContent = notesData.length;
+      document.getElementById("metaNotes").textContent=notesData.length;
       updateUndoRedoBtns();
     }
 
     // ── Reset ────────────────────────────────────────────────────
-    document.getElementById("resetBtn").addEventListener("click", ()=>{
-      if(!originalNotesData.length) return;
-      if(!confirm("Reset all corrections back to the original translation?")) return;
+    document.getElementById("resetBtn").addEventListener("click",()=>{
+      if(!originalNotesData.length)return;
+      if(!confirm("Reset all corrections back to the original translation?"))return;
       saveUndoSnapshot();
-      notesData = JSON.parse(JSON.stringify(originalNotesData));
+      notesData=JSON.parse(JSON.stringify(originalNotesData));
       rebuildNoteSpans();
-      document.getElementById("metaNotes").textContent = notesData.length;
+      document.getElementById("metaNotes").textContent=notesData.length;
     });
 
     // ── Shortcuts modal ──────────────────────────────────────────
-    document.getElementById("shortcutsBtn").addEventListener("click", ()=>{
+    document.getElementById("shortcutsBtn").addEventListener("click",()=>{
       document.getElementById("shortcutsBackdrop").classList.add("visible");
     });
-    document.getElementById("shortcutsBackdrop").addEventListener("click", e=>{
-      if(e.target === document.getElementById("shortcutsBackdrop"))
+    document.getElementById("shortcutsBackdrop").addEventListener("click",e=>{
+      if(e.target===document.getElementById("shortcutsBackdrop"))
         document.getElementById("shortcutsBackdrop").classList.remove("visible");
     });
 
     // ── Keyboard shortcuts ───────────────────────────────────────
-    document.addEventListener("keydown", e=>{
-      const tag = document.activeElement.tagName;
-      if(tag === "INPUT" || tag === "TEXTAREA") return; // don't interfere with text input
+    document.addEventListener("keydown",e=>{
+      const tag=document.activeElement.tagName;
+      // Allow typing in line editor textareas — but still catch Esc
+      const inLineEditor=document.activeElement.classList.contains("line-input");
 
-      // Escape — close editor or shortcuts modal
-      if(e.key === "Escape"){
-        if(backdrop) { closeEditor(); return; }
+      if(e.key==="Escape"){
+        if(backdrop){closeEditor();return;}
+        if(lineEditorOpen){cancelLineEditor();return;}
         document.getElementById("shortcutsBackdrop").classList.remove("visible");
         return;
       }
 
-      // Ctrl+Z — undo
-      if(e.key === "z" && (e.ctrlKey || e.metaKey) && !e.shiftKey){
-        e.preventDefault(); doUndo(); return;
-      }
-      // Ctrl+Y or Ctrl+Shift+Z — redo
-      if((e.key === "y" && (e.ctrlKey || e.metaKey)) ||
-         (e.key === "z" && (e.ctrlKey || e.metaKey) && e.shiftKey)){
-        e.preventDefault(); doRedo(); return;
-      }
+      if(inLineEditor)return; // don't intercept other keys while typing
 
-      // Space — play/pause (only when output is visible)
-      if(e.key === " " && document.getElementById("outputSection").classList.contains("visible")){
-        e.preventDefault(); togglePlayback(); return;
-      }
+      if(tag==="INPUT"||tag==="TEXTAREA")return;
 
-      // Arrow keys — jump to prev/next note
-      if(e.key === "ArrowRight" && notesData.length){
+      if(e.key==="z"&&(e.ctrlKey||e.metaKey)&&!e.shiftKey){e.preventDefault();doUndo();return;}
+      if((e.key==="y"&&(e.ctrlKey||e.metaKey))||(e.key==="z"&&(e.ctrlKey||e.metaKey)&&e.shiftKey)){e.preventDefault();doRedo();return;}
+
+      if(e.key===" "&&document.getElementById("outputSection").classList.contains("visible")){
+        e.preventDefault();togglePlayback();return;
+      }
+      if(e.key==="ArrowRight"&&notesData.length){
         e.preventDefault();
-        const cur = getCurrentNoteIndex();
-        const next = Math.min(cur + 1, notesData.length - 1);
-        seekToNote(notesData[next].time);
+        const cur=getCurrentNoteIndex();
+        seekToNote(notesData[Math.min(cur+1,notesData.length-1)].time);
         return;
       }
-      if(e.key === "ArrowLeft" && notesData.length){
+      if(e.key==="ArrowLeft"&&notesData.length){
         e.preventDefault();
-        const cur = getCurrentNoteIndex();
-        const prev = Math.max(cur - 1, 0);
-        seekToNote(notesData[prev].time);
+        const cur=getCurrentNoteIndex();
+        seekToNote(notesData[Math.max(cur-1,0)].time);
         return;
       }
-
-      // E — toggle edit mode
-      if(e.key === "e" || e.key === "E"){
-        if(document.getElementById("outputSection").classList.contains("visible"))
-          toggleEditMode();
-        return;
+      if((e.key==="e"||e.key==="E")&&document.getElementById("outputSection").classList.contains("visible")){
+        toggleEditMode();return;
+      }
+      if((e.key==="l"||e.key==="L")&&document.getElementById("outputSection").classList.contains("visible")){
+        toggleLineEditor();return;
+      }
+      if((e.key==="d"||e.key==="D")&&document.getElementById("outputSection").classList.contains("visible")){
+        setScript(currentScript==="roman"?"devanagari":"roman");return;
       }
     });
 
     function getCurrentNoteIndex(){
-      let idx = 0;
-      for(let i = 0; i < notesData.length; i++){
-        if(notesData[i].time <= audioEl.currentTime) idx = i;
+      let idx=0;
+      for(let i=0;i<notesData.length;i++){
+        if(notesData[i].time<=audioEl.currentTime)idx=i;
         else break;
       }
       return idx;
@@ -752,7 +917,7 @@
 
     // ── Copy ─────────────────────────────────────────────────────
     document.getElementById("copyBtn").addEventListener("click",()=>{
-      const text=notesData.map(n=>n.note).join("  ");
+      const text=notesData.map(n=>toDisplay(n.note,currentScript)).join("  ");
       navigator.clipboard.writeText(text).then(()=>{
         const btn=document.getElementById("copyBtn");
         btn.textContent="Copied ✓";
@@ -761,26 +926,23 @@
     });
 
     // ── Export Video ─────────────────────────────────────────────
-    document.getElementById("exportBtn").addEventListener("click", exportVideo);
+    document.getElementById("exportBtn").addEventListener("click",exportVideo);
 
-    async function exportVideo() {
-      if(!notesData.length) return;
+    async function exportVideo(){
+      if(!notesData.length)return;
       const exportBtn=document.getElementById("exportBtn");
       const exportProgress=document.getElementById("exportProgress");
       const exportProgressFill=document.getElementById("exportProgressFill");
-
       exportBtn.textContent="Exporting...";
       exportBtn.classList.add("exporting");
       exportBtn.disabled=true;
       exportProgress.classList.add("visible");
       exportProgressFill.style.width="0%";
       closeEditor();
-
       audioEl.pause();
       stopSyncLoop();
       audioEl.currentTime=0;
       highlightAtTime(0);
-
       try{
         const outputSection=document.getElementById("outputSection");
         const canvas=document.createElement("canvas");
@@ -789,19 +951,11 @@
         canvas.width=rect.width*scale;
         canvas.height=rect.height*scale;
         const ctx=canvas.getContext("2d");
-
         let drawing=true;
-        function drawLoop(){
-          if(!drawing)return;
-          drawFrame(ctx,canvas.width,canvas.height,scale);
-          requestAnimationFrame(drawLoop);
-        }
-
+        function drawLoop(){if(!drawing)return;drawFrame(ctx,canvas.width,canvas.height,scale);requestAnimationFrame(drawLoop);}
         function drawFrame(ctx,w,h,scale){
-          ctx.fillStyle="#1a1713";
-          ctx.fillRect(0,0,w,h);
-          ctx.font=`${11*scale}px 'DM Mono',monospace`;
-          ctx.fillStyle="#7a7060";
+          ctx.fillStyle="#1a1713";ctx.fillRect(0,0,w,h);
+          ctx.font=`${11*scale}px 'DM Mono',monospace`;ctx.fillStyle="#7a7060";
           const sa=document.getElementById("metaSa").textContent;
           const notes=document.getElementById("metaNotes").textContent;
           const dur=document.getElementById("metaDuration").textContent;
@@ -814,18 +968,14 @@
           let x=20*scale,y=90*scale;
           const fontSize=22*scale;
           ctx.font=`${fontSize}px 'Playfair Display',serif`;
-          const lineH=52*scale;
-          const maxW=w-20*scale;
+          const lineH=52*scale;const maxW=w-20*scale;
           noteEls.forEach(el=>{
             const text=el.textContent;
             const measured=ctx.measureText(text+"  ").width;
             if(x+measured>maxW){x=20*scale;y+=lineH;}
             const isActive=el.classList.contains("active");
             const isPlayed=el.classList.contains("played");
-            if(isActive){
-              ctx.fillStyle="rgba(201,168,76,0.25)";
-              ctx.beginPath();ctx.roundRect(x-4*scale,y-fontSize,measured+4*scale,fontSize+8*scale,3*scale);ctx.fill();
-            }
+            if(isActive){ctx.fillStyle="rgba(201,168,76,0.25)";ctx.beginPath();ctx.roundRect(x-4*scale,y-fontSize,measured+4*scale,fontSize+8*scale,3*scale);ctx.fill();}
             if(isActive)ctx.fillStyle="#c9a84c";
             else if(isPlayed)ctx.fillStyle="rgba(240,230,208,0.35)";
             else{
@@ -835,60 +985,43 @@
               else if(cls.includes("note-tivra"))ctx.fillStyle="#c48a6a";
               else ctx.fillStyle="#f0e6d0";
             }
-            ctx.fillText(text,x,y);
-            x+=measured;
+            ctx.fillText(text,x,y);x+=measured;
           });
           const barY=h-20*scale,barW=w-40*scale;
-          ctx.fillStyle="#2e2a24";
-          ctx.beginPath();ctx.roundRect(20*scale,barY,barW,3*scale,2*scale);ctx.fill();
+          ctx.fillStyle="#2e2a24";ctx.beginPath();ctx.roundRect(20*scale,barY,barW,3*scale,2*scale);ctx.fill();
           const pct=audioEl.duration?audioEl.currentTime/audioEl.duration:0;
-          ctx.fillStyle="#c9a84c";
-          ctx.beginPath();ctx.roundRect(20*scale,barY,barW*pct,3*scale,2*scale);ctx.fill();
+          ctx.fillStyle="#c9a84c";ctx.beginPath();ctx.roundRect(20*scale,barY,barW*pct,3*scale,2*scale);ctx.fill();
         }
-
         const videoStream=canvas.captureStream(30);
         const audioCtx=new AudioContext();
         const source=audioCtx.createMediaElementSource(audioEl);
         const dest=audioCtx.createMediaStreamDestination();
-        source.connect(dest);
-        source.connect(audioCtx.destination);
+        source.connect(dest);source.connect(audioCtx.destination);
         const combinedStream=new MediaStream([...videoStream.getVideoTracks(),...dest.stream.getAudioTracks()]);
         const chunks=[];
-        const recorder=new MediaRecorder(combinedStream,{
-          mimeType:MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")?"video/webm;codecs=vp9,opus":"video/webm"
-        });
+        const recorder=new MediaRecorder(combinedStream,{mimeType:MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")?"video/webm;codecs=vp9,opus":"video/webm"});
         recorder.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
         recorder.onstop=()=>{
           drawing=false;
           const blob=new Blob(chunks,{type:"video/webm"});
           const url=URL.createObjectURL(blob);
           const a=document.createElement("a");
-          a.href=url;a.download=`sargam-${selectedSa}-${Date.now()}.webm`;a.click();
+          a.href=url;a.download=`sursargam-${selectedSa}-${Date.now()}.webm`;a.click();
           URL.revokeObjectURL(url);
-          exportBtn.textContent="Export Video";
-          exportBtn.classList.remove("exporting");
-          exportBtn.disabled=false;
-          exportProgress.classList.remove("visible");
-          exportProgressFill.style.width="0%";
+          exportBtn.textContent="Export Video";exportBtn.classList.remove("exporting");exportBtn.disabled=false;
+          exportProgress.classList.remove("visible");exportProgressFill.style.width="0%";
         };
         audioEl.ontimeupdate=()=>{
           updateProgressBar();
           if(audioEl.duration)exportProgressFill.style.width=((audioEl.currentTime/audioEl.duration)*100)+"%";
         };
-        audioEl.onended=()=>{
-          document.getElementById("playBtn").textContent="▶";
-          stopSyncLoop();recorder.stop();audioCtx.close();
-        };
-        recorder.start(100);
-        drawLoop();
-        startSyncLoop();
+        audioEl.onended=()=>{document.getElementById("playBtn").textContent="▶";stopSyncLoop();recorder.stop();audioCtx.close();};
+        recorder.start(100);drawLoop();startSyncLoop();
         await audioEl.play();
         document.getElementById("playBtn").textContent="⏸";
       }catch(err){
         console.error("Export failed:",err);
-        exportBtn.textContent="Export Video";
-        exportBtn.classList.remove("exporting");
-        exportBtn.disabled=false;
+        exportBtn.textContent="Export Video";exportBtn.classList.remove("exporting");exportBtn.disabled=false;
         exportProgress.classList.remove("visible");
         alert("Export failed: "+err.message);
       }
