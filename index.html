@@ -136,9 +136,33 @@
     .bottom-rule{margin-top:52px;width:100%;max-width:560px;display:flex;align-items:center;gap:12px;}
     .bottom-rule span{flex:1;height:1px;background:var(--border);}
     .bottom-rule p{font-size:0.65rem;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;white-space:nowrap;}
+
+    /* Password gate */
+    .pw-gate{position:fixed;inset:0;z-index:999;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;}
+    .pw-gate.hidden{display:none;}
+    .pw-box{width:100%;max-width:360px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:36px 32px;}
+    .pw-box h2{font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--cream);margin-bottom:6px;}
+    .pw-box p{font-size:0.75rem;color:var(--muted);margin-bottom:24px;line-height:1.6;}
+    .pw-input{width:100%;padding:10px 14px;background:#111009;border:1px solid var(--border);border-radius:2px;color:var(--cream);font-family:'DM Mono',monospace;font-size:0.9rem;outline:none;transition:border-color 0.15s ease;margin-bottom:12px;}
+    .pw-input:focus{border-color:var(--gold-dim);}
+    .pw-input.error{border-color:var(--error);}
+    .pw-submit{width:100%;padding:12px;background:var(--gold);border:none;border-radius:2px;color:#0e0c0a;font-family:'DM Mono',monospace;font-size:0.8rem;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;transition:background 0.15s ease;}
+    .pw-submit:hover{background:#d4b45a;}
+    .pw-error{font-size:0.72rem;color:var(--error);margin-top:8px;display:none;}
+    .pw-error.visible{display:block;}
   </style>
 </head>
 <body>
+  <!-- Password gate — hidden after successful auth -->
+  <div class="pw-gate" id="pwGate">
+    <div class="pw-box">
+      <h2>Sur<em style="font-style:italic;color:var(--gold)">Sargam</em></h2>
+      <p>Enter the access password to continue.</p>
+      <input class="pw-input" type="password" id="pwInput" placeholder="Password" autocomplete="current-password"/>
+      <button class="pw-submit" id="pwSubmit">Enter</button>
+      <div class="pw-error" id="pwError">Incorrect password — try again</div>
+    </div>
+  </div>
   <div class="top-rule"><span></span><div class="diamond"></div><span></span></div>
   <header>
     <h1>Sur<em>Sargam</em></h1>
@@ -245,6 +269,67 @@
   </div>
 
   <script>
+    // ── Sargam data ──────────────────────────────────────────────
+    // ── Password gate ────────────────────────────────────────────
+    (async function initAuth() {
+      const gate = document.getElementById("pwGate");
+      const input = document.getElementById("pwInput");
+      const submitBtn = document.getElementById("pwSubmit");
+      const errorEl = document.getElementById("pwError");
+
+      // Check if already authenticated this session
+      if (sessionStorage.getItem("sursargam_auth") === "1") {
+        gate.classList.add("hidden");
+        return;
+      }
+
+      // Check if server even requires a password
+      const check = await fetch("/auth", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({password: ""})
+      });
+      if (check.ok) {
+        // No password set on server — open access (local dev)
+        gate.classList.add("hidden");
+        return;
+      }
+
+      // Show gate, handle submission
+      async function tryPassword() {
+        const pw = input.value.trim();
+        if (!pw) return;
+        submitBtn.textContent = "Checking...";
+        submitBtn.disabled = true;
+        const resp = await fetch("/auth", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({password: pw})
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.ok) {
+            sessionStorage.setItem("sursargam_auth", "1");
+            gate.classList.add("hidden");
+            return;
+          }
+        }
+        input.classList.add("error");
+        errorEl.classList.add("visible");
+        submitBtn.textContent = "Enter";
+        submitBtn.disabled = false;
+        input.value = "";
+        input.focus();
+      }
+
+      submitBtn.addEventListener("click", tryPassword);
+      input.addEventListener("keydown", e => { if (e.key === "Enter") tryPassword(); });
+      input.addEventListener("input", () => {
+        input.classList.remove("error");
+        errorEl.classList.remove("visible");
+      });
+    })();
+
     // ── Sargam data ──────────────────────────────────────────────
     const SARGAM_OPTIONS = ["S","r","R","g","G","M","M'","P","d","D","n","N"];
     const OCTAVE_SUFFIXES = ["", ".", ","];
@@ -415,7 +500,7 @@
         if(inputMode==="upload"){formData.append("file",selectedFile);}
         else{formData.append("file",recordedBlob,"recording.wav");}
         formData.append("sa",selectedSa);
-        const resp=await fetch("http://127.0.0.1:8000/translate",{method:"POST",body:formData});
+        const resp=await fetch("/translate",{method:"POST",body:formData});
         const data=await resp.json();
         if(data.error){errorMsg.textContent="Error: "+data.error;errorMsg.classList.add("visible");}
         else{setupAudio();renderOutput(data);}

@@ -1,21 +1,25 @@
 """
-Sargam Translator — FastAPI Server v2
---------------------------------------
-Runs the sargam translation logic as a local web server.
-Returns note timestamps for synchronized playback in the UI.
+SurSargam — FastAPI Server v3
+-------------------------------
+Serves the full app (index.html + translation API) from a single process.
+Includes password protection via APP_PASSWORD environment variable.
 
-To start:
+Local development:
     python -m uvicorn server:app --reload
+    Then open http://localhost:8000 in your browser.
 
-Then open index.html in your browser.
+Production (Render):
+    Set APP_PASSWORD environment variable in Render dashboard.
+    Render runs: uvicorn server:app --host 0.0.0.0 --port $PORT
 """
 
 import tempfile
 import os
 import numpy as np
 import librosa
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 
 app = FastAPI()
 
@@ -25,6 +29,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Password protection ─────────────────────────────────────────────
+# Set APP_PASSWORD as an environment variable on Render.
+# Locally, if APP_PASSWORD is not set, auth is disabled (open access).
+
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
+
+@app.post("/auth")
+async def auth(request: Request):
+    body = await request.json()
+    entered = body.get("password", "")
+    if not APP_PASSWORD:
+        # No password set — always allow (useful for local dev)
+        return JSONResponse({"ok": True})
+    if entered == APP_PASSWORD:
+        return JSONResponse({"ok": True})
+    return JSONResponse({"ok": False}, status_code=401)
+
+# ── Serve frontend ──────────────────────────────────────────────────
+# index.html lives in the same directory as server.py
+
+@app.get("/")
+async def serve_index():
+    index_path = os.path.join(os.path.dirname(__file__), "index.html")
+    return FileResponse(index_path, media_type="text/html")
 
 # ── Sargam mapping ──────────────────────────────────────────────────
 
@@ -104,15 +133,8 @@ def smooth_pitch_sequence(notes):
 # ── Collapse with timestamps ────────────────────────────────────────
 
 def collapse_with_timestamps(syllables, timestamps):
-    """
-    Collapse consecutive identical syllables, keeping the timestamp
-    of the first frame of each note group. Filters out very short
-    runs (transitions/noise) using a local windowed median threshold.
-    """
     if not syllables:
         return [], []
-
-    # Build groups: (note, count, start_timestamp)
     groups = []
     current = syllables[0]
     current_time = timestamps[0]
@@ -126,17 +148,13 @@ def collapse_with_timestamps(syllables, timestamps):
             current_time = timestamps[i]
             count = 1
     groups.append((current, count, current_time))
-
     if len(groups) == 1:
         return [groups[0][0]], [groups[0][2]]
-
     LOCAL_WINDOW = 8
     half = LOCAL_WINDOW // 2
     run_lengths = [c for _, c, _ in groups]
-
     filtered_notes = []
     filtered_times = []
-
     for i, (note, count, t) in enumerate(groups):
         lo = max(0, i - half)
         hi = min(len(groups), i + half + 1)
@@ -146,14 +164,12 @@ def collapse_with_timestamps(syllables, timestamps):
         if count >= threshold:
             filtered_notes.append(note)
             filtered_times.append(t)
-
     return filtered_notes, filtered_times
 
-# ── API endpoint ────────────────────────────────────────────────────
+# ── Translation endpoint ────────────────────────────────────────────
 
 @app.post("/translate")
 async def translate(file: UploadFile = File(...), sa: str = Form(...)):
-    # Validate Sa
     sa = sa.strip().upper()
     enharmonic = {"DB": "C#", "EB": "D#", "GB": "F#", "AB": "G#", "BB": "A#"}
     sa = enharmonic.get(sa, sa)
@@ -162,7 +178,7 @@ async def translate(file: UploadFile = File(...), sa: str = Form(...)):
 
     sa_index = CHROMATIC_SCALE.index(sa)
     sa_midi = 48 + sa_index
-    print(f"DEBUG SERVER: sa={sa}, sa_midi={sa_midi}, file={file.filename}")
+    print(f"SurSargam: sa={sa}, sa_midi={sa_midi}, file={file.filename}")
 
     suffix = os.path.splitext(file.filename)[1] or ".wav"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -173,18 +189,14 @@ async def translate(file: UploadFile = File(...), sa: str = Form(...)):
     try:
         y, sr = librosa.load(tmp_path, sr=None, mono=True)
         duration = librosa.get_duration(y=y, sr=sr)
-
         f0, voiced_flag, voiced_prob = librosa.pyin(
             y,
             fmin=librosa.note_to_hz("C2"),
             fmax=librosa.note_to_hz("C7"),
             sr=sr
         )
-
         frame_times = librosa.times_like(f0, sr=sr)
         CONFIDENCE_THRESHOLD = 0.2
-
-        # Convert frames to (syllable, timestamp) pairs
         syllables = []
         timestamps = []
         for hz, is_voiced, confidence, t in zip(f0, voiced_flag, voiced_prob, frame_times):
@@ -196,31 +208,20 @@ async def translate(file: UploadFile = File(...), sa: str = Form(...)):
             if syllable is not None:
                 syllables.append(syllable)
                 timestamps.append(float(t))
-
-        # Smooth then collapse, preserving timestamps
         syllables = smooth_pitch_sequence(syllables)
-        # Re-align timestamps after smoothing (syllables list may have changed)
-        # We rebuild timestamps to match the smoothed syllables by
-        # keeping only timestamps at positions that survived smoothing.
-        # Since smooth_pitch_sequence preserves length, timestamps stay aligned.
         syllables, timestamps = collapse_with_timestamps(syllables, timestamps)
-
-        # Build response
         notes_with_times = [
             {"note": n, "time": round(t, 3)}
             for n, t in zip(syllables, timestamps)
         ]
-
         return {
             "sargam": notes_with_times,
             "duration": round(duration, 1),
             "total_notes": len(notes_with_times),
             "sa": sa,
         }
-
     except Exception as e:
         import traceback
         return {"error": str(e), "detail": traceback.format_exc()}
-
     finally:
         os.unlink(tmp_path)
