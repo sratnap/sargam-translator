@@ -513,13 +513,34 @@
     });
 
     // ── Audio setup ──────────────────────────────────────────────
+    // On iOS, audio can only be loaded/played in direct response to a user gesture.
+    // We defer src assignment until the play button is actually tapped.
+    let pendingAudioFile = null;
+    let audioReady = false;
+
     function setupAudio(){
-      if(audioObjectURL)URL.revokeObjectURL(audioObjectURL);
-      const audioFile=inputMode==="upload"?selectedFile:recordedBlob;
-      audioObjectURL=URL.createObjectURL(audioFile);
-      audioEl.src=audioObjectURL;audioEl.load();
-      audioEl.ontimeupdate=updateProgressBar;
-      audioEl.onended=()=>{document.getElementById("playBtn").textContent="▶";stopSyncLoop();};
+      if(audioObjectURL) URL.revokeObjectURL(audioObjectURL);
+      audioObjectURL = null;
+      audioReady = false;
+      pendingAudioFile = inputMode==="upload" ? selectedFile : recordedBlob;
+      audioEl.ontimeupdate = updateProgressBar;
+      audioEl.onended = ()=>{ document.getElementById("playBtn").textContent="▶"; stopSyncLoop(); };
+      document.getElementById("progressFill").style.width = "0%";
+      document.getElementById("timeDisplay").textContent = "0:00 / 0:00";
+    }
+
+    function loadAudioNow(){
+      if(audioReady) return Promise.resolve();
+      return new Promise((resolve)=>{
+        if(audioObjectURL) URL.revokeObjectURL(audioObjectURL);
+        audioObjectURL = URL.createObjectURL(pendingAudioFile);
+        audioEl.src = audioObjectURL;
+        audioEl.load();
+        const done = ()=>{ audioReady=true; resolve(); };
+        audioEl.addEventListener("canplaythrough", done, {once:true});
+        audioEl.addEventListener("error", done, {once:true}); // don't hang on error
+        setTimeout(done, 4000); // fallback
+      });
     }
 
     // ── Note colour ──────────────────────────────────────────────
@@ -743,17 +764,28 @@
     }
 
     // ── Playback controls ────────────────────────────────────────
-    function togglePlayback(){
-      if(audioEl.paused){audioEl.play();document.getElementById("playBtn").textContent="⏸";startSyncLoop();}
-      else{audioEl.pause();document.getElementById("playBtn").textContent="▶";stopSyncLoop();}
+    async function togglePlayback(){
+      if(audioEl.paused){
+        const btn = document.getElementById("playBtn");
+        btn.textContent = "…";
+        await loadAudioNow();
+        audioEl.play().catch(()=>{});
+        btn.textContent = "⏸";
+        startSyncLoop();
+      } else {
+        audioEl.pause();
+        document.getElementById("playBtn").textContent="▶";
+        stopSyncLoop();
+      }
     }
     function seekAudio(e){
       const bar=document.getElementById("progressBar");
       audioEl.currentTime=(e.offsetX/bar.offsetWidth)*audioEl.duration;
       updateProgressBar();
     }
-    function seekToNote(time){
-      audioEl.currentTime=time;updateProgressBar();highlightAtTime(time);
+    async function seekToNote(time){
+      await loadAudioNow();
+      audioEl.currentTime=time; updateProgressBar(); highlightAtTime(time);
     }
     function updateProgressBar(){
       if(!audioEl.duration)return;
