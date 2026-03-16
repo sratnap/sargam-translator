@@ -448,10 +448,15 @@
       try{
         const stream=await navigator.mediaDevices.getUserMedia({audio:true});
         recordingChunks=[];
-        mediaRecorder=new MediaRecorder(stream);
+        // Pick best supported MIME type — iOS Safari only supports audio/mp4
+        const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus"
+                       : MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4"
+                       : "";
+        mediaRecorder = new MediaRecorder(stream, mimeType ? {mimeType} : {});
         mediaRecorder.ondataavailable=e=>recordingChunks.push(e.data);
         mediaRecorder.onstop=()=>{
-          recordedBlob=new Blob(recordingChunks,{type:"audio/wav"});
+          const blobType = mimeType || "audio/mp4";
+          recordedBlob = new Blob(recordingChunks, {type: blobType});
           selectedFile=null;updateTranslateBtn();
           document.getElementById("recordStatus").textContent="Recording saved — ready to translate";
           document.getElementById("recordStatus").classList.remove("recording");
@@ -498,7 +503,10 @@
       try{
         const formData=new FormData();
         if(inputMode==="upload"){formData.append("file",selectedFile);}
-        else{formData.append("file",recordedBlob,"recording.wav");}
+        else{
+          const ext = recordedBlob.type.includes("mp4") ? "m4a" : "webm";
+          formData.append("file",recordedBlob,`recording.${ext}`);
+        }
         formData.append("sa",selectedSa);
         const resp=await fetch("/translate",{method:"POST",body:formData});
         const data=await resp.json();
