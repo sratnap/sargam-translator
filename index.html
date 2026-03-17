@@ -169,7 +169,7 @@
     <p>sur to sargam</p>
   </header>
   <div class="card" id="mainCard">
-    <div class="label">Select Sa (Root Pitch)</div>
+    <div class="label">Select Sa (Root Pitch) <span style="font-size:0.6rem;color:var(--muted);letter-spacing:0.06em;text-transform:none;font-style:italic;">— hold to hear pitch</span></div>
     <div class="sa-row" id="saRow"></div>
     <div class="label">Audio Input</div>
     <div class="mode-row">
@@ -403,18 +403,101 @@
       if(r){r.style.opacity=redoStack.length?"1":"0.4";r.disabled=!redoStack.length;}
     }
 
+    // ── Sa preview (long press to hear pitch) ───────────────────
+    // AudioContext is created lazily on first gesture — required for iOS
+    let saAudioCtx = null;
+    let saOscillators = [];
+    let saGainNode = null;
+    let saLongPressTimer = null;
+
+    // MIDI note 48 = C3. Each Sa maps to that octave.
+    const SA_MIDI_BASE = 48;
+    function midiToHz(midi){ return 440 * Math.pow(2, (midi - 69) / 12); }
+
+    function startSaPreview(noteIndex){
+      // Create AudioContext on first user gesture (iOS requirement)
+      if(!saAudioCtx || saAudioCtx.state === "closed"){
+        saAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      // Resume if suspended (iOS sometimes suspends on creation)
+      if(saAudioCtx.state === "suspended") saAudioCtx.resume();
+
+      stopSaPreview(); // stop any existing tone
+
+      const fundamental = midiToHz(SA_MIDI_BASE + noteIndex);
+
+      // Master gain with quick fade-in to avoid click
+      saGainNode = saAudioCtx.createGain();
+      saGainNode.gain.setValueAtTime(0, saAudioCtx.currentTime);
+      saGainNode.gain.linearRampToValueAtTime(0.18, saAudioCtx.currentTime + 0.04);
+      saGainNode.connect(saAudioCtx.destination);
+
+      // Harmonium-like timbre: fundamental + harmonics at decreasing volumes
+      const harmonics = [
+        {mult: 1,    gain: 1.0},
+        {mult: 2,    gain: 0.5},
+        {mult: 3,    gain: 0.25},
+        {mult: 4,    gain: 0.12},
+        {mult: 5,    gain: 0.06},
+      ];
+      saOscillators = harmonics.map(({mult, gain})=>{
+        const osc = saAudioCtx.createOscillator();
+        const g = saAudioCtx.createGain();
+        osc.type = "sawtooth";
+        osc.frequency.value = fundamental * mult;
+        g.gain.value = gain;
+        osc.connect(g);
+        g.connect(saGainNode);
+        osc.start();
+        return osc;
+      });
+    }
+
+    function stopSaPreview(){
+      if(!saGainNode || !saAudioCtx) return;
+      // Quick fade-out to avoid click
+      saGainNode.gain.setValueAtTime(saGainNode.gain.value, saAudioCtx.currentTime);
+      saGainNode.gain.linearRampToValueAtTime(0, saAudioCtx.currentTime + 0.06);
+      const ctx = saAudioCtx;
+      const oscs = saOscillators;
+      setTimeout(()=>{
+        oscs.forEach(o=>{ try{ o.stop(); }catch(e){} });
+      }, 80);
+      saOscillators = [];
+      saGainNode = null;
+    }
+
     // ── Sa buttons ───────────────────────────────────────────────
     const saRow=document.getElementById("saRow");
-    NOTES.forEach(note=>{
+    NOTES.forEach((note, noteIndex)=>{
       const btn=document.createElement("button");
       btn.className="sa-btn"+(note===selectedSa?" active":"");
       btn.textContent=note;
+
+      // Single click — select Sa
       btn.onclick=()=>{
         document.querySelectorAll(".sa-btn").forEach(b=>b.classList.remove("active"));
         btn.classList.add("active");
         selectedSa=note;
         updateTranslateBtn();
       };
+
+      // Long press (mouse) — play Sa pitch while held
+      btn.addEventListener("mousedown", ()=>{
+        saLongPressTimer = setTimeout(()=>startSaPreview(noteIndex), 300);
+      });
+      btn.addEventListener("mouseup", ()=>{ clearTimeout(saLongPressTimer); stopSaPreview(); });
+      btn.addEventListener("mouseleave", ()=>{ clearTimeout(saLongPressTimer); stopSaPreview(); });
+
+      // Long press (touch / iOS) — play Sa pitch while held
+      btn.addEventListener("touchstart", e=>{
+        saLongPressTimer = setTimeout(()=>{
+          startSaPreview(noteIndex);
+        }, 300);
+      }, {passive: true});
+      btn.addEventListener("touchend", ()=>{ clearTimeout(saLongPressTimer); stopSaPreview(); });
+      btn.addEventListener("touchmove", ()=>{ clearTimeout(saLongPressTimer); stopSaPreview(); });
+
       saRow.appendChild(btn);
     });
 
