@@ -16,13 +16,10 @@ Production (Render):
 import tempfile
 import os
 import numpy as np
+import librosa
 from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-
-# librosa is imported lazily inside the translate endpoint
-# so it doesn't consume RAM until the first translation request.
-# numpy is lightweight and imported normally so helper functions can use it.
 
 app = FastAPI()
 
@@ -89,8 +86,7 @@ def octave_suffix(octave_offset):
 def hz_to_sargam(hz, sa_midi):
     if hz <= 0 or np.isnan(hz):
         return None
-    # Convert Hz to MIDI directly: MIDI = 69 + 12 * log2(hz / 440)
-    midi = 69 + 12 * np.log2(hz / 440.0)
+    midi = librosa.hz_to_midi(hz)
     midi_rounded = round(midi)
     semitones_from_sa = (midi_rounded - sa_midi) % 12
     octave_offset = (midi_rounded - sa_midi) // 12
@@ -174,9 +170,6 @@ def collapse_with_timestamps(syllables, timestamps):
 
 @app.post("/translate")
 async def translate(file: UploadFile = File(...), sa: str = Form(...)):
-    # Lazy import librosa — only load when actually needed, saves ~200MB at startup
-    import librosa
-
     sa = sa.strip().upper()
     enharmonic = {"DB": "C#", "EB": "D#", "GB": "F#", "AB": "G#", "BB": "A#"}
     sa = enharmonic.get(sa, sa)
@@ -194,12 +187,7 @@ async def translate(file: UploadFile = File(...), sa: str = Form(...)):
         tmp_path = tmp.name
 
     try:
-        # Load at 22050 Hz — half the memory of native rate, pYIN is fully accurate at this sr
-        TARGET_SR = 22050
-        y, sr = librosa.load(tmp_path, sr=TARGET_SR, mono=True)
-        # Free temp file as soon as audio is loaded into memory
-        os.unlink(tmp_path)
-        tmp_path = None
+        y, sr = librosa.load(tmp_path, sr=None, mono=True)
         # Pad with 0.5s silence at end — prevents pYIN from cutting off final notes
         silence = np.zeros(int(sr * 0.5))
         y = np.concatenate([y, silence])
@@ -239,5 +227,4 @@ async def translate(file: UploadFile = File(...), sa: str = Form(...)):
         import traceback
         return {"error": str(e), "detail": traceback.format_exc()}
     finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+        os.unlink(tmp_path)
