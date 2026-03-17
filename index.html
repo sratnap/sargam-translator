@@ -491,12 +491,26 @@
       btn.addEventListener("mouseleave", ()=>{ clearTimeout(saLongPressTimer); stopSaPreview(); });
 
       // Long press (touch / iOS) — play Sa pitch while held
+      let touchWasLong = false;
       btn.addEventListener("touchstart", e=>{
+        e.preventDefault();
+        touchWasLong = false;
         saLongPressTimer = setTimeout(()=>{
+          touchWasLong = true;
           startSaPreview(noteIndex);
         }, 300);
-      }, {passive: true});
-      btn.addEventListener("touchend", ()=>{ clearTimeout(saLongPressTimer); stopSaPreview(); });
+      }, {passive: false});
+      btn.addEventListener("touchend", e=>{
+        e.preventDefault();
+        clearTimeout(saLongPressTimer);
+        stopSaPreview();
+        if(!touchWasLong){
+          document.querySelectorAll(".sa-btn").forEach(b=>b.classList.remove("active"));
+          btn.classList.add("active");
+          selectedSa=note;
+          updateTranslateBtn();
+        }
+      });
       btn.addEventListener("touchmove", ()=>{ clearTimeout(saLongPressTimer); stopSaPreview(); });
 
       saRow.appendChild(btn);
