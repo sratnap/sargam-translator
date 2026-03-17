@@ -89,7 +89,8 @@ def octave_suffix(octave_offset):
 def hz_to_sargam(hz, sa_midi):
     if hz <= 0 or np.isnan(hz):
         return None
-    midi = librosa.hz_to_midi(hz)
+    # Convert Hz to MIDI directly: MIDI = 69 + 12 * log2(hz / 440)
+    midi = 69 + 12 * np.log2(hz / 440.0)
     midi_rounded = round(midi)
     semitones_from_sa = (midi_rounded - sa_midi) % 12
     octave_offset = (midi_rounded - sa_midi) // 12
