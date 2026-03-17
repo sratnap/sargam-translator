@@ -23,7 +23,7 @@
     .card{width:100%;max-width:560px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:36px 36px 32px;}
     .label{font-size:0.68rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--gold-dim);margin-bottom:10px;}
     .sa-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:28px;}
-    .sa-btn{padding:7px 14px;background:transparent;border:1px solid var(--border);border-radius:2px;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.82rem;cursor:pointer;transition:all 0.15s ease;}
+    .sa-btn{padding:7px 14px;background:transparent;border:1px solid var(--border);border-radius:2px;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.82rem;cursor:pointer;transition:all 0.15s ease;user-select:none;-webkit-user-select:none;}
     .sa-btn:hover{border-color:var(--gold-dim);color:var(--cream);}
     .sa-btn.active{background:var(--gold);border-color:var(--gold);color:#0e0c0a;font-weight:500;}
     .mode-row{display:flex;gap:8px;margin-bottom:20px;}
@@ -188,6 +188,7 @@
       <div class="record-timer" id="recordTimer">0:00</div>
     </div>
     <button class="translate-btn" id="translateBtn" disabled>Translate to Sargam</button>
+    <div style="margin-top:10px;font-size:0.68rem;color:var(--muted);text-align:center;letter-spacing:0.06em;" id="coldStartNote">First translation may take up to 30 seconds to load</div>
     <div style="padding:16px 0 0;display:none" id="loadingRow"><div class="spinner active"></div></div>
     <div class="error-msg" id="errorMsg"></div>
 
@@ -594,9 +595,13 @@
         const resp=await fetch("/translate",{method:"POST",body:formData});
         const data=await resp.json();
         if(data.error){errorMsg.textContent="Error: "+data.error;errorMsg.classList.add("visible");}
-        else{setupAudio();renderOutput(data);}
+        else{
+          setupAudio();renderOutput(data);
+          const note=document.getElementById("coldStartNote");
+          if(note) note.style.display="none";
+        }
       }catch(err){
-        errorMsg.textContent="Could not reach the server. Make sure you ran: python -m uvicorn server:app --reload";
+        errorMsg.textContent="Could not reach the server — please wait 30 seconds and try again. If the problem persists, refresh the page.";
         errorMsg.classList.add("visible");
       }finally{
         loadingRow.style.display="none";updateTranslateBtn();

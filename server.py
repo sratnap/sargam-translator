@@ -188,7 +188,10 @@ async def translate(file: UploadFile = File(...), sa: str = Form(...)):
 
     try:
         y, sr = librosa.load(tmp_path, sr=None, mono=True)
-        duration = librosa.get_duration(y=y, sr=sr)
+        # Pad with 0.5s silence at end — prevents pYIN from cutting off final notes
+        silence = np.zeros(int(sr * 0.5))
+        y = np.concatenate([y, silence])
+        duration = librosa.get_duration(y=y, sr=sr) - 0.5  # report original duration
         f0, voiced_flag, voiced_prob = librosa.pyin(
             y,
             fmin=librosa.note_to_hz("C2"),
