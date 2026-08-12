@@ -634,6 +634,18 @@
           return;
         }
 
+        // Rate limited or server busy — show the server's own message
+        if(resp.status === 429){
+          let msg = "Too many requests — please wait a moment and try again.";
+          try {
+            const data = await resp.json();
+            if(data && data.error) msg = data.error;
+          } catch(e){}
+          errorMsg.textContent = msg;
+          errorMsg.classList.add("visible");
+          return;
+        }
+
         const data=await resp.json();
         if(data.error){errorMsg.textContent="Error: "+data.error;errorMsg.classList.add("visible");}
         else{

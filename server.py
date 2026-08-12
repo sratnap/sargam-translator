@@ -83,24 +83,116 @@ def auth_required():
     return bool(APP_PASSWORD)
 
 
-# ── Auth middleware ─────────────────────────────────────────────────
-# This runs BEFORE FastAPI parses the request body, so an unauthenticated
-# upload is rejected without the server buffering the file at all.
-# The in-handler check below is kept as a second layer.
+# ── Rate limiting ───────────────────────────────────────────────────
+# Two separate guards, both in-memory (no database, no extra dependency):
+#
+#   1. Hourly cap  — how many translations one user may run per hour.
+#   2. Queue depth — how many translations may be waiting at any moment.
+#
+# The queue guard matters because librosa runs synchronously and blocks the
+# whole event loop while it works. A deep queue makes the entire site
+# unresponsive, not just slow, so it is better to turn people away quickly
+# with a clear message than to let requests pile up and time out.
+#
+# NOTE: this state lives in memory, so it resets whenever Render restarts or
+# spins the instance down. That is fine for protecting against accidents and
+# casual overuse. It is not a defence against a determined attacker.
+
+RATE_LIMIT_PER_HOUR = 20   # translations per user per hour
+MAX_QUEUE_DEPTH = 3        # translations queued or running at once
+
+_request_log = {}          # key -> list of unix timestamps
+_in_flight = 0             # translations currently queued or running
+
+
+def _rate_key(request):
+    """Identify the caller: by token if we have one, otherwise by IP."""
+    token = request.headers.get("x-auth-token", "")
+    if token:
+        # The signature is the unique part; it is already a hash, so this
+        # is a stable per-session identifier without storing the token.
+        return "t:" + token.rsplit(".", 1)[-1][:16]
+    client = request.client.host if request.client else "unknown"
+    return "ip:" + client
+
+
+def _check_and_record_rate(key):
+    """
+    Returns None if the request is allowed, or seconds-until-retry if not.
+    Prunes timestamps older than an hour as it goes.
+    """
+    now = time.time()
+    cutoff = now - 3600
+
+    stamps = [t for t in _request_log.get(key, []) if t > cutoff]
+
+    if len(stamps) >= RATE_LIMIT_PER_HOUR:
+        _request_log[key] = stamps
+        retry_after = int(stamps[0] + 3600 - now) + 1
+        return max(retry_after, 1)
+
+    stamps.append(now)
+    _request_log[key] = stamps
+
+    # Opportunistic cleanup so the dict cannot grow without bound
+    if len(_request_log) > 500:
+        for k in [k for k, v in _request_log.items() if not any(t > cutoff for t in v)]:
+            del _request_log[k]
+
+    return None
+
+
+# ── Middleware ──────────────────────────────────────────────────────
+# Runs BEFORE FastAPI parses the request body, so a rejected request never
+# causes the server to buffer an upload. The in-handler auth check below is
+# kept as a second layer.
 
 PROTECTED_PATHS = {"/translate"}
 
 
 @app.middleware("http")
-async def require_token(request: Request, call_next):
-    if request.url.path in PROTECTED_PATHS and auth_required():
+async def guard_translate(request: Request, call_next):
+    global _in_flight
+
+    if request.url.path not in PROTECTED_PATHS:
+        return await call_next(request)
+
+    # ── 1. Auth ──
+    if auth_required():
         token = request.headers.get("x-auth-token", "")
         if not token_is_valid(token):
             return JSONResponse(
                 {"error": "Not authorised. Please refresh the page and sign in again."},
                 status_code=401,
             )
-    return await call_next(request)
+
+    # ── 2. Queue depth ──
+    if _in_flight >= MAX_QUEUE_DEPTH:
+        return JSONResponse(
+            {"error": "The server is busy with other translations right now. "
+                      "Please wait a moment and try again."},
+            status_code=429,
+            headers={"Retry-After": "30"},
+        )
+
+    # ── 3. Hourly cap ──
+    key = _rate_key(request)
+    retry_after = _check_and_record_rate(key)
+    if retry_after is not None:
+        minutes = max(1, retry_after // 60)
+        return JSONResponse(
+            {"error": f"You've reached the limit of {RATE_LIMIT_PER_HOUR} translations "
+                      f"per hour. Please try again in about {minutes} minute"
+                      f"{'s' if minutes != 1 else ''}."},
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    _in_flight += 1
+    try:
+        return await call_next(request)
+    finally:
+        _in_flight -= 1
 
 
 @app.post("/auth")
