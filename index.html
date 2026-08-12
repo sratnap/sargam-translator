@@ -109,7 +109,7 @@
     .shortcuts-close{margin-top:18px;width:100%;padding:8px;background:transparent;border:1px solid var(--border);border-radius:2px;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.72rem;cursor:pointer;transition:all 0.15s ease;}
     .shortcuts-close:hover{border-color:var(--gold-dim);color:var(--cream);}
 
-    /* ── Line editor ─────────────────────────────────────────── */
+    /* Line editor */
     .line-editor-wrap{display:none;flex-direction:column;gap:6px;margin-bottom:8px;}
     .line-editor-wrap.visible{display:flex;}
     .line-editor-hint{font-size:0.68rem;color:var(--muted);letter-spacing:0.08em;margin-bottom:4px;line-height:1.6;}
@@ -163,6 +163,7 @@
       <div class="pw-error" id="pwError">Incorrect password — try again</div>
     </div>
   </div>
+
   <div class="top-rule"><span></span><div class="diamond"></div><span></span></div>
   <header>
     <h1>Sur<em>Sargam</em></h1>
@@ -206,11 +207,9 @@
         <div class="time-display" id="timeDisplay">0:00 / 0:00</div>
       </div>
 
-      <!-- Toolbar -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
         <div class="edit-hint" style="margin-bottom:0" id="editHint">Hold any note to correct it</div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-          <!-- Script toggle -->
           <div class="script-toggle" title="Switch between Roman and Devanagari notation">
             <button class="script-btn active" id="scriptRoman" onclick="setScript('roman')">Sa</button>
             <button class="script-btn" id="scriptDev" onclick="setScript('devanagari')">सा</button>
@@ -224,10 +223,8 @@
         </div>
       </div>
 
-      <!-- Normal note display -->
       <div class="sargam-output" id="sargamOutput"></div>
 
-      <!-- Line editor -->
       <div class="line-editor-wrap" id="lineEditorWrap">
         <div class="line-editor-hint">
           Each line is <span>8 notes</span>. Edit freely — separate notes with spaces.<br/>
@@ -249,7 +246,7 @@
       </div>
     </div>
   </div>
-  <div class="bottom-rule"><span></span><p>v2.3 — SurSargam</p><span></span></div>
+  <div class="bottom-rule"><span></span><p>v3.1 — SurSargam</p><span></span></div>
   <audio id="audioEl"></audio>
 
   <!-- Shortcuts modal -->
@@ -270,50 +267,54 @@
   </div>
 
   <script>
-    // ── Sargam data ──────────────────────────────────────────────
     // ── Password gate ────────────────────────────────────────────
-    (async function initAuth() {
+    // The server issues a signed token on successful auth. Every /translate
+    // call sends that token back — without it the server does no work at all.
+    let authToken = sessionStorage.getItem("sursargam_token") || "";
+
+    function clearAuthAndShowGate(){
+      authToken = "";
+      sessionStorage.removeItem("sursargam_token");
+      const gate = document.getElementById("pwGate");
+      if(gate) gate.classList.remove("hidden");
+    }
+
+    // Wire the password form up FIRST and unconditionally. The gate can be
+    // re-shown later (e.g. when a stale token is rejected), so its listeners
+    // must exist even if we never showed it on load.
+    (function wirePasswordGate() {
       const gate = document.getElementById("pwGate");
       const input = document.getElementById("pwInput");
       const submitBtn = document.getElementById("pwSubmit");
       const errorEl = document.getElementById("pwError");
 
-      // Check if already authenticated this session
-      if (sessionStorage.getItem("sursargam_auth") === "1") {
-        gate.classList.add("hidden");
-        return;
-      }
-
-      // Check if server even requires a password
-      const check = await fetch("/auth", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({password: ""})
-      });
-      if (check.ok) {
-        // No password set on server — open access (local dev)
-        gate.classList.add("hidden");
-        return;
-      }
-
-      // Show gate, handle submission
       async function tryPassword() {
         const pw = input.value.trim();
         if (!pw) return;
         submitBtn.textContent = "Checking...";
         submitBtn.disabled = true;
-        const resp = await fetch("/auth", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({password: pw})
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data.ok) {
-            sessionStorage.setItem("sursargam_auth", "1");
-            gate.classList.add("hidden");
-            return;
+        errorEl.classList.remove("visible");
+        try {
+          const resp = await fetch("/auth", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({password: pw})
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.ok && data.token) {
+              authToken = data.token;
+              sessionStorage.setItem("sursargam_token", authToken);
+              gate.classList.add("hidden");
+              submitBtn.textContent = "Enter";
+              submitBtn.disabled = false;
+              input.value = "";
+              return;
+            }
           }
+          errorEl.textContent = "Incorrect password — try again";
+        } catch (err) {
+          errorEl.textContent = "Could not reach the server — please try again";
         }
         input.classList.add("error");
         errorEl.classList.add("visible");
@@ -331,43 +332,67 @@
       });
     })();
 
+    (async function initAuth() {
+      const gate = document.getElementById("pwGate");
+
+      // Already holding a token from earlier this session. If it turns out to
+      // be stale, /translate will 401 and the gate comes back — with working
+      // listeners, because they were attached above.
+      if (authToken) {
+        gate.classList.add("hidden");
+        return;
+      }
+
+      // Try an empty password — if the server accepts it, no password is
+      // configured (local dev) and it hands back a token anyway.
+      try {
+        const check = await fetch("/auth", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({password: ""})
+        });
+        if (check.ok) {
+          const data = await check.json();
+          if (data.ok && data.token) {
+            authToken = data.token;
+            sessionStorage.setItem("sursargam_token", authToken);
+            gate.classList.add("hidden");
+          }
+        }
+      } catch (err) {
+        // Server unreachable — leave the gate visible
+      }
+    })();
+
     // ── Sargam data ──────────────────────────────────────────────
     const SARGAM_OPTIONS = ["S","r","R","g","G","M","M'","P","d","D","n","N"];
     const OCTAVE_SUFFIXES = ["", ".", ","];
 
-    // Devanagari mapping (Roman base → Devanagari base)
     const DEV_MAP = {
       "S":"सा", "r":"रे॒", "R":"रे", "g":"ग॒", "G":"ग",
       "M":"म",  "M'":"म॑", "P":"प",  "d":"ध॒", "D":"ध",
       "n":"नि॒","N":"नि"
     };
-    // Reverse: Devanagari base → Roman base (for parsing line editor input)
     const DEV_TO_ROMAN = {};
     Object.entries(DEV_MAP).forEach(([r,d])=>{ DEV_TO_ROMAN[d]=r; });
 
-    // Convert a Roman note (with octave suffix) to display string
     function toDisplay(romanNote, script) {
       if(script === 'roman') return romanNote;
-      // Split octave suffix
       let base = romanNote.replace(/[.,]+$/, "");
       let suffix = romanNote.slice(base.length);
       const dev = DEV_MAP[base] || romanNote;
-      // Devanagari octave: use the same . and , conventions for now
       return dev + suffix;
     }
 
-    // Parse a display token back to Roman (for line editor apply)
     function toRoman(token, script) {
       if(script === 'roman') return token;
       let base = token.replace(/[.,]+$/, "");
       let suffix = token.slice(base.length);
       const roman = DEV_TO_ROMAN[base];
       if(roman) return roman + suffix;
-      // Might already be Roman (user typed Roman in Devanagari mode — accept it)
       return token;
     }
 
-    // Validate a Roman note token
     function isValidRoman(token) {
       const base = token.replace(/[.,]+$/, "");
       const suffix = token.slice(base.length);
@@ -386,7 +411,7 @@
     let originalNotesData = [];
     let undoStack = [];
     let redoStack = [];
-    let currentScript = 'roman'; // 'roman' | 'devanagari'
+    let currentScript = 'roman';
     let lineEditorOpen = false;
     const NOTES_PER_LINE = 8;
 
@@ -405,35 +430,29 @@
     }
 
     // ── Sa preview (long press to hear pitch) ───────────────────
-    // AudioContext is created lazily on first gesture — required for iOS
     let saAudioCtx = null;
     let saOscillators = [];
     let saGainNode = null;
     let saLongPressTimer = null;
 
-    // MIDI note 48 = C3. Each Sa maps to that octave.
     const SA_MIDI_BASE = 48;
     function midiToHz(midi){ return 440 * Math.pow(2, (midi - 69) / 12); }
 
     function startSaPreview(noteIndex){
-      // Create AudioContext on first user gesture (iOS requirement)
       if(!saAudioCtx || saAudioCtx.state === "closed"){
         saAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
       }
-      // Resume if suspended (iOS sometimes suspends on creation)
       if(saAudioCtx.state === "suspended") saAudioCtx.resume();
 
-      stopSaPreview(); // stop any existing tone
+      stopSaPreview();
 
       const fundamental = midiToHz(SA_MIDI_BASE + noteIndex);
 
-      // Master gain with quick fade-in to avoid click
       saGainNode = saAudioCtx.createGain();
       saGainNode.gain.setValueAtTime(0, saAudioCtx.currentTime);
       saGainNode.gain.linearRampToValueAtTime(0.18, saAudioCtx.currentTime + 0.04);
       saGainNode.connect(saAudioCtx.destination);
 
-      // Harmonium-like timbre: fundamental + harmonics at decreasing volumes
       const harmonics = [
         {mult: 1,    gain: 1.0},
         {mult: 2,    gain: 0.5},
@@ -456,10 +475,8 @@
 
     function stopSaPreview(){
       if(!saGainNode || !saAudioCtx) return;
-      // Quick fade-out to avoid click
       saGainNode.gain.setValueAtTime(saGainNode.gain.value, saAudioCtx.currentTime);
       saGainNode.gain.linearRampToValueAtTime(0, saAudioCtx.currentTime + 0.06);
-      const ctx = saAudioCtx;
       const oscs = saOscillators;
       setTimeout(()=>{
         oscs.forEach(o=>{ try{ o.stop(); }catch(e){} });
@@ -475,7 +492,6 @@
       btn.className="sa-btn"+(note===selectedSa?" active":"");
       btn.textContent=note;
 
-      // Single click — select Sa
       btn.onclick=()=>{
         document.querySelectorAll(".sa-btn").forEach(b=>b.classList.remove("active"));
         btn.classList.add("active");
@@ -483,14 +499,12 @@
         updateTranslateBtn();
       };
 
-      // Long press (mouse) — play Sa pitch while held
       btn.addEventListener("mousedown", ()=>{
         saLongPressTimer = setTimeout(()=>startSaPreview(noteIndex), 300);
       });
       btn.addEventListener("mouseup", ()=>{ clearTimeout(saLongPressTimer); stopSaPreview(); });
       btn.addEventListener("mouseleave", ()=>{ clearTimeout(saLongPressTimer); stopSaPreview(); });
 
-      // Long press (touch / iOS) — play Sa pitch while held
       let touchWasLong = false;
       btn.addEventListener("touchstart", e=>{
         e.preventDefault();
@@ -606,7 +620,20 @@
           formData.append("file",recordedBlob,`recording.${ext}`);
         }
         formData.append("sa",selectedSa);
-        const resp=await fetch("/translate",{method:"POST",body:formData});
+        const resp=await fetch("/translate",{
+          method:"POST",
+          headers:{"X-Auth-Token": authToken},
+          body:formData
+        });
+
+        // Token rejected or expired — send the user back to the gate
+        if(resp.status === 401){
+          errorMsg.textContent="Your session expired. Please enter the password again.";
+          errorMsg.classList.add("visible");
+          clearAuthAndShowGate();
+          return;
+        }
+
         const data=await resp.json();
         if(data.error){errorMsg.textContent="Error: "+data.error;errorMsg.classList.add("visible");}
         else{
@@ -623,8 +650,8 @@
     });
 
     // ── Audio setup ──────────────────────────────────────────────
-    // On iOS, audio can only be loaded/played in direct response to a user gesture.
-    // We defer src assignment until the play button is actually tapped.
+    // On iOS, audio can only be loaded/played in direct response to a user
+    // gesture, so we defer src assignment until the play button is tapped.
     let pendingAudioFile = null;
     let audioReady = false;
 
@@ -648,8 +675,8 @@
         audioEl.load();
         const done = ()=>{ audioReady=true; resolve(); };
         audioEl.addEventListener("canplaythrough", done, {once:true});
-        audioEl.addEventListener("error", done, {once:true}); // don't hang on error
-        setTimeout(done, 4000); // fallback
+        audioEl.addEventListener("error", done, {once:true});
+        setTimeout(done, 4000);
       });
     }
 
@@ -711,9 +738,7 @@
       currentScript=script;
       document.getElementById("scriptRoman").classList.toggle("active",script==="roman");
       document.getElementById("scriptDev").classList.toggle("active",script==="devanagari");
-      // Rebuild spans with new script
       rebuildNoteSpans();
-      // If line editor is open, rebuild it too
       if(lineEditorOpen) buildLineEditorLines();
     }
 
@@ -738,29 +763,22 @@
 
     // ── Line editor ──────────────────────────────────────────────
     function toggleLineEditor(){
-      if(lineEditorOpen){
-        cancelLineEditor();
-      } else {
-        openLineEditor();
-      }
+      if(lineEditorOpen){ cancelLineEditor(); }
+      else { openLineEditor(); }
     }
 
     function openLineEditor(){
       lineEditorOpen=true;
-      // Pause playback
       audioEl.pause();
       document.getElementById("playBtn").textContent="▶";
       stopSyncLoop();
       closeEditor();
-      // Hide normal output, show line editor
       document.getElementById("sargamOutput").style.display="none";
       document.getElementById("lineEditorWrap").classList.add("visible");
-      // Update button
       const btn=document.getElementById("lineEditBtn");
       btn.textContent="✓ Lines On";
       btn.style.borderColor="var(--gold-dim)";
       btn.style.color="var(--gold)";
-      // Update hint
       document.getElementById("editHint").textContent="Editing by lines — apply when done";
       buildLineEditorLines();
     }
@@ -768,7 +786,6 @@
     function buildLineEditorLines(){
       const container=document.getElementById("lineEditorLines");
       container.innerHTML="";
-      // Split notesData into chunks of NOTES_PER_LINE
       for(let i=0;i<notesData.length;i+=NOTES_PER_LINE){
         const chunk=notesData.slice(i,i+NOTES_PER_LINE);
         const lineIndex=Math.floor(i/NOTES_PER_LINE);
@@ -789,12 +806,10 @@
         input.dataset.startNote=i;
         input.dataset.endNote=Math.min(i+NOTES_PER_LINE,notesData.length);
 
-        // Auto-resize textarea to content
         input.addEventListener("input",()=>{
           input.style.height="auto";
           input.style.height=input.scrollHeight+"px";
           input.classList.remove("has-error");
-          // Remove any error message for this line
           const existingErr=row.nextElementSibling;
           if(existingErr&&existingErr.classList.contains("line-error"))existingErr.remove();
         });
@@ -803,7 +818,6 @@
         row.appendChild(input);
         container.appendChild(row);
 
-        // Initial auto-size
         setTimeout(()=>{
           input.style.height="auto";
           input.style.height=input.scrollHeight+"px";
@@ -814,16 +828,13 @@
     function applyLineEdits(){
       const inputs=document.querySelectorAll(".line-input");
       let hasErrors=false;
-      // First pass: validate all lines
       inputs.forEach(input=>{
         const tokens=input.value.trim().split(/\s+/).filter(Boolean);
-        // Remove any existing error
         const row=input.closest(".line-row");
         const existingErr=row.nextElementSibling;
         if(existingErr&&existingErr.classList.contains("line-error"))existingErr.remove();
         input.classList.remove("has-error");
 
-        // Convert tokens to Roman for validation
         const romanTokens=tokens.map(t=>toRoman(t,currentScript));
         const invalid=romanTokens.filter(t=>!isValidRoman(t));
         if(invalid.length>0){
@@ -837,7 +848,6 @@
       });
       if(hasErrors)return;
 
-      // Second pass: apply
       saveUndoSnapshot();
       const newNotesData=[];
       inputs.forEach(input=>{
@@ -846,7 +856,6 @@
         tokens.forEach((token,i)=>{
           const romanNote=toRoman(token,currentScript);
           const originalIndex=startNote+i;
-          // Preserve existing time and corrected flag if possible; mark corrected if changed
           const original=notesData[originalIndex];
           const wasChanged=!original||original.note!==romanNote;
           newNotesData.push({
@@ -953,7 +962,6 @@
       notePicker.className="note-picker";
       document.body.appendChild(notePicker);
 
-      // Delete button
       const delBtn=document.createElement("button");
       delBtn.className="note-option";
       delBtn.textContent="✕ delete";
@@ -975,7 +983,6 @@
       });
       notePicker.appendChild(delBtn);
 
-      // Insert button
       const insertBtn=document.createElement("button");
       insertBtn.className="note-option";
       insertBtn.textContent="+ insert after";
@@ -1000,7 +1007,6 @@
       });
       notePicker.appendChild(insertBtn);
 
-      // Note options — show in current script
       SARGAM_OPTIONS.forEach(swara=>{
         OCTAVE_SUFFIXES.forEach(suffix=>{
           const fullNote=swara+suffix;
@@ -1015,7 +1021,6 @@
         });
       });
 
-      // Position picker
       notePicker.style.display="flex";
       notePicker.style.visibility="hidden";
       requestAnimationFrame(()=>{
@@ -1090,7 +1095,6 @@
     // ── Keyboard shortcuts ───────────────────────────────────────
     document.addEventListener("keydown",e=>{
       const tag=document.activeElement.tagName;
-      // Allow typing in line editor textareas — but still catch Esc
       const inLineEditor=document.activeElement.classList.contains("line-input");
 
       if(e.key==="Escape"){
@@ -1100,8 +1104,7 @@
         return;
       }
 
-      if(inLineEditor)return; // don't intercept other keys while typing
-
+      if(inLineEditor)return;
       if(tag==="INPUT"||tag==="TEXTAREA")return;
 
       if(e.key==="z"&&(e.ctrlKey||e.metaKey)&&!e.shiftKey){e.preventDefault();doUndo();return;}
@@ -1166,6 +1169,7 @@
       exportProgress.classList.add("visible");
       exportProgressFill.style.width="0%";
       closeEditor();
+      await loadAudioNow();
       audioEl.pause();
       stopSyncLoop();
       audioEl.currentTime=0;

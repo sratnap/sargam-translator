@@ -1,23 +1,36 @@
 """
-SurSargam — FastAPI Server v3
--------------------------------
+SurSargam — FastAPI Server v3.1
+--------------------------------
 Serves the full app (index.html + translation API) from a single process.
-Includes password protection via APP_PASSWORD environment variable.
+
+Security:
+  - APP_PASSWORD environment variable gates access.
+  - /auth exchanges the password for a signed, expiring token.
+  - /translate REQUIRES a valid token — the endpoint does no work without one.
+  - Uploads are size-capped before any audio decoding happens.
 
 Local development:
     python -m uvicorn server:app --reload
-    Then open http://localhost:8000 in your browser.
+    Then open http://localhost:8000
+
+    If APP_PASSWORD is not set, auth is disabled entirely (open access).
+    To test the locked-down behaviour locally:
+        set APP_PASSWORD=testpass
+        python -m uvicorn server:app --reload
 
 Production (Render):
-    Set APP_PASSWORD environment variable in Render dashboard.
-    Render runs: uvicorn server:app --host 0.0.0.0 --port $PORT
+    Set APP_PASSWORD in the Render dashboard.
+    Start command: uvicorn server:app --host 0.0.0.0 --port $PORT
 """
 
 import tempfile
 import os
+import time
+import hmac
+import hashlib
 import numpy as np
 import librosa
-from fastapi import FastAPI, UploadFile, File, Form, Request
+from fastapi import FastAPI, UploadFile, File, Form, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
@@ -30,30 +43,92 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Password protection ─────────────────────────────────────────────
-# Set APP_PASSWORD as an environment variable on Render.
-# Locally, if APP_PASSWORD is not set, auth is disabled (open access).
+# ── Auth ────────────────────────────────────────────────────────────
+# APP_PASSWORD is set as an environment variable on Render.
+# If it is empty (typical local dev), auth is disabled and everything is open.
 
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
 
+# Tokens are signed with a secret derived from the password, so rotating
+# APP_PASSWORD automatically invalidates every token already issued.
+_SECRET = hashlib.sha256(("sursargam::" + APP_PASSWORD).encode()).digest()
+
+TOKEN_LIFETIME_SECONDS = 7 * 24 * 60 * 60  # 7 days
+
+
+def make_token():
+    """Create a token of the form '<expiry>.<signature>'."""
+    expiry = str(int(time.time()) + TOKEN_LIFETIME_SECONDS)
+    signature = hmac.new(_SECRET, expiry.encode(), hashlib.sha256).hexdigest()
+    return f"{expiry}.{signature}"
+
+
+def token_is_valid(token):
+    """Verify a token's signature and expiry. Returns True/False, never raises."""
+    if not token or "." not in token:
+        return False
+    expiry, signature = token.rsplit(".", 1)
+    expected = hmac.new(_SECRET, expiry.encode(), hashlib.sha256).hexdigest()
+    # compare_digest avoids leaking information through timing
+    if not hmac.compare_digest(signature, expected):
+        return False
+    try:
+        return int(expiry) > int(time.time())
+    except ValueError:
+        return False
+
+
+def auth_required():
+    """Auth is only enforced when a password has actually been configured."""
+    return bool(APP_PASSWORD)
+
+
+# ── Auth middleware ─────────────────────────────────────────────────
+# This runs BEFORE FastAPI parses the request body, so an unauthenticated
+# upload is rejected without the server buffering the file at all.
+# The in-handler check below is kept as a second layer.
+
+PROTECTED_PATHS = {"/translate"}
+
+
+@app.middleware("http")
+async def require_token(request: Request, call_next):
+    if request.url.path in PROTECTED_PATHS and auth_required():
+        token = request.headers.get("x-auth-token", "")
+        if not token_is_valid(token):
+            return JSONResponse(
+                {"error": "Not authorised. Please refresh the page and sign in again."},
+                status_code=401,
+            )
+    return await call_next(request)
+
+
 @app.post("/auth")
 async def auth(request: Request):
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
     entered = body.get("password", "")
-    if not APP_PASSWORD:
-        # No password set — always allow (useful for local dev)
-        return JSONResponse({"ok": True})
-    if entered == APP_PASSWORD:
-        return JSONResponse({"ok": True})
+
+    if not auth_required():
+        # No password configured — open access, but still hand back a token
+        # so the frontend can use one code path everywhere.
+        return JSONResponse({"ok": True, "token": make_token()})
+
+    if hmac.compare_digest(entered, APP_PASSWORD):
+        return JSONResponse({"ok": True, "token": make_token()})
+
     return JSONResponse({"ok": False}, status_code=401)
 
+
 # ── Serve frontend ──────────────────────────────────────────────────
-# index.html lives in the same directory as server.py
 
 @app.get("/")
 async def serve_index():
     index_path = os.path.join(os.path.dirname(__file__), "index.html")
     return FileResponse(index_path, media_type="text/html")
+
 
 # ── Sargam mapping ──────────────────────────────────────────────────
 
@@ -75,6 +150,7 @@ SEMITONES_TO_SARGAM = {
 CHROMATIC_SCALE = ["C", "C#", "D", "D#", "E", "F",
                    "F#", "G", "G#", "A", "A#", "B"]
 
+
 def octave_suffix(octave_offset):
     if octave_offset == 0:
         return ""
@@ -82,6 +158,7 @@ def octave_suffix(octave_offset):
         return "." * octave_offset
     else:
         return "," * abs(octave_offset)
+
 
 def hz_to_sargam(hz, sa_midi):
     if hz <= 0 or np.isnan(hz):
@@ -94,9 +171,11 @@ def hz_to_sargam(hz, sa_midi):
     syllable += octave_suffix(octave_offset)
     return syllable
 
+
 # ── Smoothing ───────────────────────────────────────────────────────
 
 SMOOTH_WINDOW = 9
+
 
 def smooth_pitch_sequence(notes):
     if len(notes) < SMOOTH_WINDOW:
@@ -130,11 +209,18 @@ def smooth_pitch_sequence(notes):
         smoothed.extend([note] * count)
     return smoothed
 
+
 # ── Collapse with timestamps ────────────────────────────────────────
 
 def collapse_with_timestamps(syllables, timestamps):
+    """
+    Collapse consecutive identical syllables, keeping the timestamp
+    of the first frame of each note group. Filters out very short
+    runs (transitions/noise) using a local windowed median threshold.
+    """
     if not syllables:
         return [], []
+
     groups = []
     current = syllables[0]
     current_time = timestamps[0]
@@ -148,13 +234,17 @@ def collapse_with_timestamps(syllables, timestamps):
             current_time = timestamps[i]
             count = 1
     groups.append((current, count, current_time))
+
     if len(groups) == 1:
         return [groups[0][0]], [groups[0][2]]
+
     LOCAL_WINDOW = 8
     half = LOCAL_WINDOW // 2
     run_lengths = [c for _, c, _ in groups]
+
     filtered_notes = []
     filtered_times = []
+
     for i, (note, count, t) in enumerate(groups):
         lo = max(0, i - half)
         hi = min(len(groups), i + half + 1)
@@ -164,12 +254,33 @@ def collapse_with_timestamps(syllables, timestamps):
         if count >= threshold:
             filtered_notes.append(note)
             filtered_times.append(t)
+
     return filtered_notes, filtered_times
+
+
+# ── Upload limits ───────────────────────────────────────────────────
+# Checked before any decoding, so an oversized file can never reach librosa.
+
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024   # 20 MB
+MAX_DURATION_SECONDS = 300            # 5 minutes
+
 
 # ── Translation endpoint ────────────────────────────────────────────
 
 @app.post("/translate")
-async def translate(file: UploadFile = File(...), sa: str = Form(...)):
+async def translate(
+    file: UploadFile = File(...),
+    sa: str = Form(...),
+    x_auth_token: str = Header(default=""),
+):
+    # ── Gate 1: token. Nothing below this runs without a valid token. ──
+    if auth_required() and not token_is_valid(x_auth_token):
+        return JSONResponse(
+            {"error": "Not authorised. Please refresh the page and sign in again."},
+            status_code=401,
+        )
+
+    # ── Gate 2: validate Sa before touching the file ──
     sa = sa.strip().upper()
     enharmonic = {"DB": "C#", "EB": "D#", "GB": "F#", "AB": "G#", "BB": "A#"}
     sa = enharmonic.get(sa, sa)
@@ -178,28 +289,45 @@ async def translate(file: UploadFile = File(...), sa: str = Form(...)):
 
     sa_index = CHROMATIC_SCALE.index(sa)
     sa_midi = 48 + sa_index
-    print(f"SurSargam: sa={sa}, sa_midi={sa_midi}, file={file.filename}")
+
+    # ── Gate 3: size cap, checked on the raw bytes before decoding ──
+    contents = await file.read()
+    if len(contents) > MAX_UPLOAD_BYTES:
+        mb = MAX_UPLOAD_BYTES // (1024 * 1024)
+        return {"error": f"File is too large. Please keep uploads under {mb} MB."}
+
+    print(f"SurSargam: sa={sa}, sa_midi={sa_midi}, "
+          f"file={file.filename}, bytes={len(contents)}")
 
     suffix = os.path.splitext(file.filename)[1] or ".wav"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        contents = await file.read()
         tmp.write(contents)
         tmp_path = tmp.name
 
     try:
         y, sr = librosa.load(tmp_path, sr=None, mono=True)
+
+        # ── Gate 4: duration cap, now that we know the real length ──
+        raw_duration = librosa.get_duration(y=y, sr=sr)
+        if raw_duration > MAX_DURATION_SECONDS:
+            mins = MAX_DURATION_SECONDS // 60
+            return {"error": f"Audio is too long. Please keep it under {mins} minutes."}
+
         # Pad with 0.5s silence at end — prevents pYIN from cutting off final notes
         silence = np.zeros(int(sr * 0.5))
         y = np.concatenate([y, silence])
-        duration = librosa.get_duration(y=y, sr=sr) - 0.5  # report original duration
+        duration = raw_duration
+
         f0, voiced_flag, voiced_prob = librosa.pyin(
             y,
             fmin=librosa.note_to_hz("C2"),
             fmax=librosa.note_to_hz("C7"),
             sr=sr
         )
+
         frame_times = librosa.times_like(f0, sr=sr)
         CONFIDENCE_THRESHOLD = 0.2
+
         syllables = []
         timestamps = []
         for hz, is_voiced, confidence, t in zip(f0, voiced_flag, voiced_prob, frame_times):
@@ -211,20 +339,26 @@ async def translate(file: UploadFile = File(...), sa: str = Form(...)):
             if syllable is not None:
                 syllables.append(syllable)
                 timestamps.append(float(t))
+
         syllables = smooth_pitch_sequence(syllables)
         syllables, timestamps = collapse_with_timestamps(syllables, timestamps)
+
         notes_with_times = [
             {"note": n, "time": round(t, 3)}
             for n, t in zip(syllables, timestamps)
         ]
+
         return {
             "sargam": notes_with_times,
             "duration": round(duration, 1),
             "total_notes": len(notes_with_times),
             "sa": sa,
         }
+
     except Exception as e:
         import traceback
         return {"error": str(e), "detail": traceback.format_exc()}
+
     finally:
-        os.unlink(tmp_path)
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
