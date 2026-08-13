@@ -391,7 +391,13 @@ def collapse_with_timestamps(syllables, timestamps):
 # Checked before any decoding, so an oversized file can never reach librosa.
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024   # 20 MB
-MAX_DURATION_SECONDS = 300            # 5 minutes
+MAX_DURATION_SECONDS = 90             # 1.5 minutes
+#
+# Why 90 seconds and not longer: pYIN is slow, and this handler runs
+# synchronously, so it blocks the event loop while it works. A five-minute song
+# on a shared free-tier CPU can take minutes, during which the whole site is
+# unresponsive for everyone. Raise this once the app is on a paid instance and
+# the work has been moved off the request thread.
 
 
 # ── Translation endpoint ────────────────────────────────────────────
