@@ -3,23 +3,33 @@ SurSargam — FastAPI Server v3.1
 --------------------------------
 Serves the full app (index.html + translation API) from a single process.
 
-Security:
-  - APP_PASSWORD environment variable gates access.
-  - /auth exchanges the password for a signed, expiring token.
-  - /translate REQUIRES a valid token — the endpoint does no work without one.
-  - Uploads are size-capped before any audio decoding happens.
+TWO MODES, controlled by the APP_PASSWORD environment variable:
+
+  PUBLIC MODE  (APP_PASSWORD not set)
+      Anyone can use the app, no password prompt. The page fetches an access
+      token automatically on load, so there is no friction for visitors.
+      Rate limiting counts per IP address.
+
+  PRIVATE MODE (APP_PASSWORD set)
+      Visitors must enter the shared password before the app loads.
+      Rate limiting counts per session.
+
+  Adding APP_PASSWORD in the Render dashboard flips the live site from public
+  back to private within about a minute, and invalidates every token already
+  issued. That is the kill switch if the app is ever abused.
+
+In BOTH modes: /translate requires a valid token, uploads are size- and
+duration-capped, and rate limits apply.
 
 Local development:
     python -m uvicorn server:app --reload
     Then open http://localhost:8000
 
-    If APP_PASSWORD is not set, auth is disabled entirely (open access).
-    To test the locked-down behaviour locally:
+    To test private mode locally:
         set APP_PASSWORD=testpass
         python -m uvicorn server:app --reload
 
 Production (Render):
-    Set APP_PASSWORD in the Render dashboard.
     Start command: uvicorn server:app --host 0.0.0.0 --port $PORT
 """
 
@@ -105,15 +115,36 @@ _request_log = {}          # key -> list of unix timestamps
 _in_flight = 0             # translations currently queued or running
 
 
+def _client_ip(request):
+    """
+    The real visitor's IP.
+
+    Render (like most hosts) puts a proxy in front of the app, so
+    request.client.host is the proxy, not the visitor. The original address is
+    the leftmost entry in X-Forwarded-For. Without this, every visitor shares a
+    single rate-limit bucket and one busy hour locks out the whole site.
+    """
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 def _rate_key(request):
-    """Identify the caller: by token if we have one, otherwise by IP."""
-    token = request.headers.get("x-auth-token", "")
-    if token:
-        # The signature is the unique part; it is already a hash, so this
-        # is a stable per-session identifier without storing the token.
-        return "t:" + token.rsplit(".", 1)[-1][:16]
-    client = request.client.host if request.client else "unknown"
-    return "ip:" + client
+    """
+    Identify the caller.
+
+    In password mode, tokens are handed out only to people who know the
+    password, so a token is a good per-session identifier.
+
+    In public mode, tokens are free — anyone can request a fresh one and reset
+    their quota — so the IP is the only identifier worth counting against.
+    """
+    if auth_required():
+        token = request.headers.get("x-auth-token", "")
+        if token:
+            return "t:" + token.rsplit(".", 1)[-1][:16]
+    return "ip:" + _client_ip(request)
 
 
 def _check_and_record_rate(key):
@@ -157,14 +188,20 @@ async def guard_translate(request: Request, call_next):
     if request.url.path not in PROTECTED_PATHS:
         return await call_next(request)
 
-    # ── 1. Auth ──
-    if auth_required():
-        token = request.headers.get("x-auth-token", "")
-        if not token_is_valid(token):
-            return JSONResponse(
-                {"error": "Not authorised. Please refresh the page and sign in again."},
-                status_code=401,
-            )
+    # ── 1. Token ──
+    # A token is always required, in both modes. In password mode you must know
+    # the password to get one. In public mode the page fetches one automatically
+    # on load, so there is no friction for real visitors — but a script hitting
+    # /translate directly still has to ask for a token first.
+    #
+    # Be clear-eyed about what this is: in public mode it is a speed bump, not
+    # security. It stops drive-by scripts, not anyone determined.
+    token = request.headers.get("x-auth-token", "")
+    if not token_is_valid(token):
+        return JSONResponse(
+            {"error": "Not authorised. Please refresh the page and try again."},
+            status_code=401,
+        )
 
     # ── 2. Queue depth ──
     if _in_flight >= MAX_QUEUE_DEPTH:
@@ -365,10 +402,10 @@ async def translate(
     sa: str = Form(...),
     x_auth_token: str = Header(default=""),
 ):
-    # ── Gate 1: token. Nothing below this runs without a valid token. ──
-    if auth_required() and not token_is_valid(x_auth_token):
+    # ── Gate 1: token. Second layer; the middleware already checked this. ──
+    if not token_is_valid(x_auth_token):
         return JSONResponse(
-            {"error": "Not authorised. Please refresh the page and sign in again."},
+            {"error": "Not authorised. Please refresh the page and try again."},
             status_code=401,
         )
 
