@@ -388,10 +388,13 @@ async def translate(
         mb = MAX_UPLOAD_BYTES // (1024 * 1024)
         return {"error": f"File is too large. Please keep uploads under {mb} MB."}
 
-    print(f"SurSargam: sa={sa}, sa_midi={sa_midi}, "
-          f"file={file.filename}, bytes={len(contents)}")
-
     suffix = os.path.splitext(file.filename)[1] or ".wav"
+
+    # Log the file TYPE, never the filename — filenames often contain
+    # personal detail (names, lesson titles) and we have no need for them.
+    print(f"SurSargam: sa={sa}, sa_midi={sa_midi}, "
+          f"type={suffix}, bytes={len(contents)}")
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(contents)
         tmp_path = tmp.name

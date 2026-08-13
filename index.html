@@ -12,7 +12,7 @@
        Localhost is ignored automatically, so local testing won't
        show up in your numbers.
   -->
-  <script data-goatcounter="https://sursargam.goatcounter.com/count"
+  <script data-goatcounter="https://MYCODE.goatcounter.com/count"
           async src="//gc.zgo.at/count.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -142,6 +142,24 @@
     .script-btn.active{background:rgba(201,168,76,0.12);color:var(--gold);}
     .script-btn:hover:not(.active){color:var(--cream);}
 
+    /* Privacy modal */
+    .privacy-backdrop{position:fixed;inset:0;z-index:300;background:rgba(10,8,6,0.75);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;padding:24px;}
+    .privacy-backdrop.visible{display:flex;}
+    .privacy-modal{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:32px;max-width:520px;width:100%;max-height:82vh;overflow-y:auto;}
+    .privacy-modal h3{font-family:'Playfair Display',serif;font-size:1.25rem;color:var(--cream);margin-bottom:6px;}
+    .privacy-modal .updated{font-size:0.65rem;color:var(--muted);letter-spacing:0.08em;margin-bottom:20px;}
+    .privacy-modal h4{font-size:0.68rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold-dim);margin:20px 0 8px;}
+    .privacy-modal p{font-size:0.78rem;color:var(--cream);line-height:1.7;margin-bottom:10px;opacity:0.88;}
+    .privacy-modal ul{margin:0 0 10px 16px;}
+    .privacy-modal li{font-size:0.78rem;color:var(--cream);line-height:1.7;margin-bottom:6px;opacity:0.88;}
+    .privacy-modal strong{color:var(--gold);font-weight:500;}
+    .privacy-modal a{color:var(--gold);text-decoration:none;border-bottom:1px solid var(--gold-dim);}
+    .privacy-modal a:hover{color:var(--cream);}
+    .privacy-close{margin-top:22px;width:100%;padding:10px;background:transparent;border:1px solid var(--border);border-radius:2px;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.72rem;letter-spacing:0.1em;cursor:pointer;transition:all 0.15s ease;}
+    .privacy-close:hover{border-color:var(--gold-dim);color:var(--cream);}
+    .footer-link{background:none;border:none;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.65rem;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;padding:0;transition:color 0.15s ease;}
+    .footer-link:hover{color:var(--gold);}
+
     .bottom-rule{margin-top:52px;width:100%;max-width:560px;display:flex;align-items:center;gap:12px;}
     .bottom-rule span{flex:1;height:1px;background:var(--border);}
     .bottom-rule p{font-size:0.65rem;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;white-space:nowrap;}
@@ -256,7 +274,78 @@
     </div>
   </div>
   <div class="bottom-rule"><span></span><p>v3.1 — SurSargam</p><span></span></div>
+  <div style="margin-top:14px;">
+    <button class="footer-link" onclick="document.getElementById('privacyBackdrop').classList.add('visible')">Privacy</button>
+  </div>
   <audio id="audioEl"></audio>
+
+  <!-- Privacy modal -->
+  <div class="privacy-backdrop" id="privacyBackdrop">
+    <div class="privacy-modal">
+      <h3>Privacy</h3>
+      <div class="updated">Last updated: August 2026</div>
+
+      <p>SurSargam is a personal project, not a company. This page describes
+      exactly what happens to your data — in plain language, without legal padding.</p>
+
+      <h4>Your audio</h4>
+      <p><strong>Your recordings are never stored.</strong> When you upload a file or
+      record with your microphone, the audio is sent to the server, analysed for pitch,
+      and <strong>deleted immediately</strong> once the sargam is produced — typically
+      within seconds. It is not saved to disk, not backed up, not reviewed by anyone,
+      and not used to train anything.</p>
+      <p>Playback and video export happen entirely inside your browser. That audio
+      never leaves your device at all.</p>
+
+      <h4>What is kept</h4>
+      <p>Very little, and none of it identifies you:</p>
+      <ul>
+        <li><strong>Server logs</strong> record that a translation happened — the file
+        type, its size, and which Sa was chosen. Filenames are deliberately not logged.
+        These logs rotate automatically and are not kept long-term.</li>
+        <li><strong>Rate limiting</strong> holds a short-lived counter in memory so one
+        person cannot overload the server. It is discarded whenever the server restarts.</li>
+        <li><strong>Analytics</strong> count page visits and whether a translation
+        succeeded or failed.</li>
+      </ul>
+
+      <h4>Analytics</h4>
+      <p>SurSargam uses <a href="https://www.goatcounter.com" target="_blank"
+      rel="noopener noreferrer">GoatCounter</a>, a privacy-focused analytics tool.
+      It uses <strong>no cookies</strong> and assigns <strong>no unique identifier</strong>
+      to you, so it cannot follow you across sites or sessions. It records rough
+      aggregate information — country, browser, screen size, and which site linked
+      you here — and nothing about the content of your audio or notation.</p>
+      <p>This exists so I can tell whether people find the tool useful. That is the
+      entire purpose.</p>
+
+      <h4>Accounts and passwords</h4>
+      <p>There are no user accounts. Access uses a single shared password, held in
+      your browser for the current session only and cleared when you close the tab.
+      No email address, name, or profile is ever requested.</p>
+
+      <h4>Where it runs</h4>
+      <p>SurSargam is hosted on <a href="https://render.com" target="_blank"
+      rel="noopener noreferrer">Render</a>. All traffic is encrypted over HTTPS.
+      Render handles the server infrastructure and, like any host, processes traffic
+      data such as IP addresses in order to route requests.</p>
+
+      <h4>What is never done</h4>
+      <ul>
+        <li>Your audio is never sold, shared, or published.</li>
+        <li>Your data is never used for advertising.</li>
+        <li>No tracking cookies are set.</li>
+        <li>Nothing is shared with third parties beyond the hosting and analytics
+        services named above.</li>
+      </ul>
+
+      <h4>Questions</h4>
+      <p>If anything here is unclear, or you would like something removed, get in
+      touch at <strong>YOUR-EMAIL-HERE</strong>.</p>
+
+      <button class="privacy-close" onclick="document.getElementById('privacyBackdrop').classList.remove('visible')">Close</button>
+    </div>
+  </div>
 
   <!-- Shortcuts modal -->
   <div class="shortcuts-backdrop" id="shortcutsBackdrop">
@@ -1156,6 +1245,12 @@
         document.getElementById("shortcutsBackdrop").classList.remove("visible");
     });
 
+    // ── Privacy modal ────────────────────────────────────────────
+    document.getElementById("privacyBackdrop").addEventListener("click",e=>{
+      if(e.target===document.getElementById("privacyBackdrop"))
+        document.getElementById("privacyBackdrop").classList.remove("visible");
+    });
+
     // ── Keyboard shortcuts ───────────────────────────────────────
     document.addEventListener("keydown",e=>{
       const tag=document.activeElement.tagName;
@@ -1164,6 +1259,7 @@
       if(e.key==="Escape"){
         if(backdrop){closeEditor();return;}
         if(lineEditorOpen){cancelLineEditor();return;}
+        document.getElementById("privacyBackdrop").classList.remove("visible");
         document.getElementById("shortcutsBackdrop").classList.remove("visible");
         return;
       }
