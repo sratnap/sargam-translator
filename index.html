@@ -5,6 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>SurSargam</title>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+
+  <!-- ── Analytics (GoatCounter) ──────────────────────────────────
+       Cookieless, no personal data, no consent banner needed.
+       REPLACE "MYCODE" below with your GoatCounter site code.
+       Localhost is ignored automatically, so local testing won't
+       show up in your numbers.
+  -->
+  <script data-goatcounter="https://sursargam.goatcounter.com/count"
+          async src="//gc.zgo.at/count.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -267,6 +276,22 @@
   </div>
 
   <script>
+    // ── Analytics helper ─────────────────────────────────────────
+    // Fires a custom event to GoatCounter. Completely safe if the script
+    // hasn't loaded, is blocked by an ad blocker, or you're on localhost —
+    // it just does nothing. Never sends personal data or audio content.
+    function track(name, title){
+      try {
+        if (window.goatcounter && window.goatcounter.count) {
+          window.goatcounter.count({
+            path: name,
+            title: title || name,
+            event: true
+          });
+        }
+      } catch(e) { /* analytics must never break the app */ }
+    }
+
     // ── Password gate ────────────────────────────────────────────
     // The server issues a signed token on successful auth. Every /translate
     // call sends that token back — without it the server does no work at all.
@@ -421,6 +446,17 @@
       undoStack.push(JSON.parse(JSON.stringify(notesData)));
       redoStack = [];
       updateUndoRedoBtns();
+    }
+
+    // Fires at most once per translation, so the number means "how many
+    // translations needed correcting", not "how many keystrokes happened".
+    // A high ratio against translate-success is a signal that accuracy
+    // is the thing to work on.
+    let hasTrackedEdit = false;
+    function trackEditedOnce(){
+      if(hasTrackedEdit) return;
+      hasTrackedEdit = true;
+      track("notes-edited", "Corrected notes");
     }
     function updateUndoRedoBtns(){
       const u=document.getElementById("undoBtn");
@@ -614,8 +650,12 @@
       stopSyncLoop();
       try{
         const formData=new FormData();
-        if(inputMode==="upload"){formData.append("file",selectedFile);}
+        if(inputMode==="upload"){
+          track("input-upload", "Used file upload");
+          formData.append("file",selectedFile);
+        }
         else{
+          track("input-record", "Used live recording");
           const ext = recordedBlob.type.includes("mp4") ? "m4a" : "webm";
           formData.append("file",recordedBlob,`recording.${ext}`);
         }
@@ -628,6 +668,7 @@
 
         // Token rejected or expired — send the user back to the gate
         if(resp.status === 401){
+          track("auth-expired", "Session expired");
           errorMsg.textContent="Your session expired. Please enter the password again.";
           errorMsg.classList.add("visible");
           clearAuthAndShowGate();
@@ -636,6 +677,7 @@
 
         // Rate limited or server busy — show the server's own message
         if(resp.status === 429){
+          track("rate-limited", "Rate limited");
           let msg = "Too many requests — please wait a moment and try again.";
           try {
             const data = await resp.json();
@@ -647,13 +689,20 @@
         }
 
         const data=await resp.json();
-        if(data.error){errorMsg.textContent="Error: "+data.error;errorMsg.classList.add("visible");}
+        if(data.error){
+          track("translate-error", "Translation error");
+          errorMsg.textContent="Error: "+data.error;
+          errorMsg.classList.add("visible");
+        }
         else{
+          // The number that matters: a translation that actually worked.
+          track("translate-success", "Translation completed");
           setupAudio();renderOutput(data);
           const note=document.getElementById("coldStartNote");
           if(note) note.style.display="none";
         }
       }catch(err){
+        track("translate-unreachable", "Server unreachable");
         errorMsg.textContent="Could not reach the server — please wait 30 seconds and try again. If the problem persists, refresh the page.";
         errorMsg.classList.add("visible");
       }finally{
@@ -708,6 +757,7 @@
       originalNotesData=JSON.parse(JSON.stringify(notesData));
       undoStack=[];
       redoStack=[];
+      hasTrackedEdit=false;   // new translation, allow one edit event again
       updateUndoRedoBtns();
       document.getElementById("metaSa").textContent=data.sa;
       document.getElementById("metaNotes").textContent=data.total_notes;
@@ -860,6 +910,7 @@
       });
       if(hasErrors)return;
 
+      trackEditedOnce();
       saveUndoSnapshot();
       const newNotesData=[];
       inputs.forEach(input=>{
@@ -1057,6 +1108,7 @@
     }
 
     function applyCorrection(index,newNote){
+      trackEditedOnce();
       saveUndoSnapshot();
       notesData[index].note=newNote;
       notesData[index].corrected=true;
@@ -1159,6 +1211,7 @@
 
     // ── Copy ─────────────────────────────────────────────────────
     document.getElementById("copyBtn").addEventListener("click",()=>{
+      track("copy-sargam", "Copied sargam");
       const text=notesData.map(n=>toDisplay(n.note,currentScript)).join("  ");
       navigator.clipboard.writeText(text).then(()=>{
         const btn=document.getElementById("copyBtn");
@@ -1172,6 +1225,7 @@
 
     async function exportVideo(){
       if(!notesData.length)return;
+      track("export-video", "Exported video");
       const exportBtn=document.getElementById("exportBtn");
       const exportProgress=document.getElementById("exportProgress");
       const exportProgressFill=document.getElementById("exportProgressFill");
